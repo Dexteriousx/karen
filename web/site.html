@@ -1,0 +1,246 @@
+<!doctype html>
+<html lang="ru" translate="no">
+<head>
+<meta charset="utf-8">
+<meta name="google" content="notranslate">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#050608">
+<meta name="description" content="Карен — IoT-робот-помощник на Raspberry Pi: голос, эмоции, колёса и управление через интернет.">
+<title>Карен — IoT-робот</title>
+<style>
+  :root{--bg:#050608;--panel:#0d1014;--panel2:#11161c;--line:#1c232b;--text:#dfe7ee;--muted:#8794a0;--acc:#39ff6a;--cyan:#5ef2ff;--warn:#ffd166;--pink:#ff9de6;--err:#ff5a4d}
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;background:var(--bg);color:var(--text);font:17px/1.6 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+  a{color:var(--cyan)}
+  .wrap{max-width:1100px;margin:0 auto;padding:0 16px}
+  nav{position:sticky;top:0;z-index:5;background:rgba(5,6,8,.85);backdrop-filter:blur(8px);border-bottom:1px solid var(--line)}
+  nav .wrap{display:flex;align-items:center;gap:18px;height:56px}
+  nav b{color:var(--acc);font-size:19px;letter-spacing:.5px}
+  nav .links{display:flex;gap:18px;margin-left:auto;font-size:15px}
+  nav .links a{color:var(--muted);text-decoration:none}
+  nav .links a:hover{color:var(--text)}
+  .cta{display:inline-flex;align-items:center;gap:8px;background:var(--acc);color:#04210e!important;font-weight:600;text-decoration:none;border-radius:12px;padding:10px 18px}
+  .cta.ghost{background:none;color:var(--text)!important;border:1px solid var(--line)}
+  nav .cta{padding:7px 14px;font-size:15px}
+  @media (max-width:760px){nav .links a:not(.cta){display:none}}
+  /* hero */
+  .hero{display:grid;grid-template-columns:1.05fr 1fr;gap:40px;align-items:center;padding:56px 0 40px}
+  @media (max-width:860px){.hero{grid-template-columns:1fr;padding-top:28px;gap:24px}}
+  .eyebrow{color:var(--cyan);font-size:14px;font-weight:600;letter-spacing:1.5px;text-transform:uppercase}
+  h1{font-size:clamp(32px,5vw,48px);line-height:1.05;margin:10px 0 16px;letter-spacing:-.5px}
+  h1 span{color:var(--acc)}
+  .lead{color:var(--muted);font-size:clamp(17px,2.2vw,20px);margin:0 0 26px;max-width:34em}
+  .btns{display:flex;flex-wrap:wrap;gap:12px}
+  .screen{position:relative;border-radius:24px;padding:14px;background:linear-gradient(160deg,#1a2129,#0b0e12);border:1px solid var(--line);box-shadow:0 30px 80px -30px rgba(57,255,106,.25)}
+  .screen canvas{display:block;width:100%;aspect-ratio:800/480;border-radius:12px;background:#050608}
+  .live{display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px;margin-top:12px;font-size:14px;color:var(--muted)}
+  .dot{width:9px;height:9px;border-radius:50%;background:var(--muted);display:inline-block;margin-right:6px}
+  .on .dot{background:var(--acc);box-shadow:0 0 10px var(--acc)}
+  .on #liveText{color:var(--acc)}
+  section{padding:56px 0;border-top:1px solid var(--line)}
+  h2{font-size:clamp(26px,4vw,36px);margin:0 0 8px;letter-spacing:-.3px}
+  .sub{color:var(--muted);margin:0 0 28px;max-width:44em}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:14px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:20px}
+  .card .ic{font-size:26px;line-height:1}
+  .card h3{margin:10px 0 6px;font-size:18px}
+  .card p{margin:0;color:var(--muted);font-size:15px}
+  /* схема */
+  .diagram{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:18px;overflow-x:auto}
+  .diagram svg{display:block;width:100%;min-width:640px;height:auto}
+  .steps{counter-reset:s;list-style:none;padding:0;margin:24px 0 0;display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px}
+  .steps li{counter-increment:s;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px 14px 14px 52px;position:relative;font-size:15px;color:var(--muted)}
+  .steps li b{color:var(--text);display:block}
+  .steps li::before{content:counter(s);position:absolute;left:14px;top:14px;width:26px;height:26px;border-radius:50%;background:var(--panel2);border:1px solid var(--acc);color:var(--acc);display:grid;place-items:center;font-size:14px;font-weight:700}
+  /* железо */
+  table{width:100%;border-collapse:collapse;font-size:15px}
+  th,td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{color:var(--muted);font-weight:600;font-size:13px;text-transform:uppercase;letter-spacing:.8px}
+  td code{background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:1px 6px;font-size:13px;color:var(--cyan)}
+  .tablebox{background:var(--panel);border:1px solid var(--line);border-radius:18px;overflow-x:auto}
+  .tags{display:flex;flex-wrap:wrap;gap:10px}
+  .tag{border:1px solid var(--line);background:var(--panel);border-radius:999px;padding:8px 14px;font-size:15px}
+  .tag small{color:var(--muted);margin-left:6px}
+  .stats{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px}
+  .stat{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:16px}
+  .stat span{color:var(--muted);font-size:14px}
+  .stat b{display:block;font-size:26px;font-variant-numeric:tabular-nums}
+  footer{border-top:1px solid var(--line);padding:28px 0 40px;color:var(--muted);font-size:14px}
+  footer .wrap{display:flex;flex-wrap:wrap;gap:12px;justify-content:space-between}
+</style>
+</head>
+<body>
+<nav><div class="wrap"><b>Карен</b>
+  <div class="links"><a href="#features">Возможности</a><a href="#how">Как работает</a><a href="#hardware">Железо</a><a href="#tech">Технологии</a><a class="cta" href="/app">Открыть пульт</a></div>
+</div></nav>
+
+<header class="wrap hero">
+  <div>
+    <div class="eyebrow">IoT-проект · Raspberry Pi · ИИ</div>
+    <h1>Карен — <span>робот-помощник</span>, которым можно управлять из любой точки мира</h1>
+    <p class="lead">Говорит и слушает по-русски, отвечает на вопросы с поиском в интернете, показывает эмоции на экране и ездит на колёсах. Пульт, чат и датчики — прямо в браузере телефона.</p>
+    <div class="btns"><a class="cta" href="/app">Открыть пульт →</a><a class="cta ghost" href="#how">Как это работает</a></div>
+  </div>
+  <div>
+    <div class="screen"><canvas id="face" width="800" height="480" aria-label="Лицо Карен"></canvas></div>
+    <div class="live" id="live"><span><i class="dot"></i><span id="liveText">проверяю робота…</span></span><span id="liveMore"></span></div>
+  </div>
+</header>
+
+<section id="features"><div class="wrap">
+  <h2>Что умеет Карен</h2>
+  <p class="sub">Один робот — и голосовой помощник, и управляемое через интернет IoT-устройство.</p>
+  <div class="grid">
+    <div class="card"><div class="ic">🎤</div><h3>Слушает и говорит</h3><p>Микрофон INMP441 и распознавание речи. Отвечает своим «компьютерным» голосом через динамик.</p></div>
+    <div class="card"><div class="ic">🧠</div><h3>Отвечает на любые вопросы</h3><p>Мозг — Google Gemini с поиском: погода, новости, курсы валют, факты. С добрым юмором.</p></div>
+    <div class="card"><div class="ic">😄</div><h3>Эмоции на экране</h3><p>9 выражений лица: радость, грусть, удивление, «думает», «слушает»… Во время речи — звуковые волны.</p></div>
+    <div class="card"><div class="ic">🛞</div><h3>Ездит</h3><p>Два мотора через драйвер L298N. Кнопками на сайте или голосом: «вперёд», «назад», «налево», «стоп».</p></div>
+    <div class="card"><div class="ic">🌐</div><h3>Управление через интернет</h3><p>Робот сам подключается к сайту, поэтому работает за любым Wi‑Fi или мобильным хотспотом.</p></div>
+    <div class="card"><div class="ic">📈</div><h3>Датчики онлайн</h3><p>Температура процессора, загрузка, память, Wi‑Fi, питание и журнал событий — в реальном времени.</p></div>
+  </div>
+</div></section>
+
+<section id="how"><div class="wrap">
+  <h2>Как это работает</h2>
+  <p class="sub">Телефон и робот не обязаны быть в одной сети: всё общение идёт через облачный сайт.</p>
+  <div class="diagram">
+    <svg viewBox="0 0 960 360" role="img" aria-label="Схема: телефон — сайт на Render — робот на Raspberry Pi; сайт обращается к Gemini">
+      <defs>
+        <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#8794a0"/></marker>
+      </defs>
+      <style>
+        .box{fill:#11161c;stroke:#2a333d;stroke-width:1.5}
+        .t{fill:#dfe7ee;font:600 17px system-ui,sans-serif}
+        .s{fill:#8794a0;font:13px system-ui,sans-serif}
+        .l{stroke:#8794a0;stroke-width:1.6;fill:none}
+        .lab{fill:#5ef2ff;font:12.5px system-ui,sans-serif}
+        .acc{stroke:#39ff6a}
+      </style>
+      <!-- телефон -->
+      <rect class="box" x="20" y="120" width="190" height="120" rx="16"/>
+      <text class="t" x="40" y="155">📱 Телефон</text>
+      <text class="s" x="40" y="180">браузер: пульт, чат,</text>
+      <text class="s" x="40" y="198">микрофон, датчики</text>
+      <!-- сайт -->
+      <rect class="box acc" x="370" y="120" width="220" height="120" rx="16"/>
+      <text class="t" x="390" y="155">☁️ Сайт (Render)</text>
+      <text class="s" x="390" y="180">Python · FastAPI</text>
+      <text class="s" x="390" y="198">пароль, журнал, мост</text>
+      <text class="s" x="390" y="216">к роботу</text>
+      <!-- gemini -->
+      <rect class="box" x="370" y="16" width="220" height="64" rx="14"/>
+      <text class="t" x="390" y="44">🧠 Google Gemini</text>
+      <text class="s" x="390" y="64">ответы + поиск в интернете</text>
+      <!-- tts -->
+      <rect class="box" x="370" y="280" width="220" height="64" rx="14"/>
+      <text class="t" x="390" y="308">🔊 edge-tts</text>
+      <text class="s" x="390" y="328">синтез голоса Карен</text>
+      <!-- робот -->
+      <rect class="box" x="750" y="70" width="190" height="220" rx="16"/>
+      <text class="t" x="770" y="105">🤖 Робот</text>
+      <text class="s" x="770" y="128">Raspberry Pi 5</text>
+      <text class="s" x="770" y="160">• экран 7" — лицо</text>
+      <text class="s" x="770" y="182">• микрофон INMP441</text>
+      <text class="s" x="770" y="204">• динамик</text>
+      <text class="s" x="770" y="226">• L298N + 2 мотора</text>
+      <text class="s" x="770" y="248">• robot_agent.py</text>
+      <!-- стрелки -->
+      <path class="l" d="M212 172H366" marker-end="url(#ar)"/>
+      <path class="l" d="M366 196H212" marker-end="url(#ar)"/>
+      <text class="lab" x="236" y="164">HTTPS: команды, чат</text>
+      <text class="lab" x="236" y="214">ответ, голос, датчики</text>
+      <path class="l" d="M480 118V84" marker-end="url(#ar)"/>
+      <path class="l" d="M480 242V276" marker-end="url(#ar)"/>
+      <path class="l acc" d="M746 172H594" marker-end="url(#ar)"/>
+      <path class="l acc" d="M594 196H746" marker-end="url(#ar)"/>
+      <text class="lab" x="606" y="164">WebSocket: датчики</text>
+      <text class="lab" x="606" y="214">команды: ехать, лицо</text>
+      <text class="lab" x="606" y="230">сказать, вкл/выкл</text>
+    </svg>
+  </div>
+  <ol class="steps">
+    <li><b>Вы говорите или пишете</b>Телефон распознаёт речь прямо в браузере.</li>
+    <li><b>Сайт спрашивает Gemini</b>Добавляет время, город и характер Карен.</li>
+    <li><b>Ответ озвучивается</b>edge-tts + «компьютерный» фильтр — на телефоне или на роботе.</li>
+    <li><b>Робот реагирует</b>Меняет лицо, говорит, едет — команды идут по WebSocket.</li>
+    <li><b>Датчики обратно</b>Каждые 2 секунды робот отправляет своё состояние на сайт.</li>
+  </ol>
+</div></section>
+
+<section id="hardware"><div class="wrap">
+  <h2>Железо</h2>
+  <p class="sub">Из чего собрана Карен и как всё подключено.</p>
+  <div class="tablebox"><table>
+    <thead><tr><th>Компонент</th><th>Зачем</th><th>Подключение</th></tr></thead>
+    <tbody>
+      <tr><td>Raspberry Pi 5</td><td>Мозг робота: Python, связь с сайтом, звук, экран</td><td>Wi‑Fi</td></tr>
+      <tr><td>Экран Waveshare 7" (800×480)</td><td>Лицо Карен с эмоциями</td><td>HDMI / DSI, браузер в режиме киоска</td></tr>
+      <tr><td>Микрофон INMP441</td><td>Голосовые команды</td><td>I2S (voiceHAT)</td></tr>
+      <tr><td>Динамик</td><td>Голос Карен</td><td>аудиовыход</td></tr>
+      <tr><td>Драйвер моторов L298N</td><td>Управление двумя моторами, скорость через ШИМ</td><td>Левый: <code>GPIO5</code> <code>GPIO6</code> · Правый: <code>GPIO22</code> <code>GPIO23</code>, ENB <code>GPIO13</code></td></tr>
+      <tr><td>2 мотора с колёсами</td><td>Движение: вперёд, назад, развороты на месте</td><td>к выходам L298N</td></tr>
+    </tbody>
+  </table></div>
+</div></section>
+
+<section id="tech"><div class="wrap">
+  <h2>Технологии</h2>
+  <p class="sub">Всё на Python и JavaScript, код открыт на GitHub.</p>
+  <div class="tags">
+    <span class="tag">Python<small>робот и сервер</small></span>
+    <span class="tag">FastAPI<small>сайт и API</small></span>
+    <span class="tag">WebSocket<small>связь с роботом</small></span>
+    <span class="tag">Google Gemini<small>ИИ + поиск</small></span>
+    <span class="tag">edge-tts<small>голос</small></span>
+    <span class="tag">Web Speech API<small>распознавание речи</small></span>
+    <span class="tag">gpiozero<small>моторы</small></span>
+    <span class="tag">Canvas<small>анимация лица</small></span>
+    <span class="tag">Render<small>облако</small></span>
+    <span class="tag">GitHub<small>код</small></span>
+  </div>
+</div></section>
+
+<section id="now"><div class="wrap">
+  <h2>Прямо сейчас</h2>
+  <p class="sub">Живые данные с настоящего робота — обновляются каждые несколько секунд.</p>
+  <div class="stats">
+    <div class="stat"><span>Робот</span><b id="sOnline">—</b></div>
+    <div class="stat"><span>Температура CPU</span><b id="sTemp">—</b></div>
+    <div class="stat"><span>Лицо на экране</span><b id="sFace">—</b></div>
+    <div class="stat"><span>Голосовая Карен</span><b id="sVoice">—</b></div>
+    <div class="stat"><span>Работает</span><b id="sUp">—</b></div>
+  </div>
+  <p style="margin-top:28px"><a class="cta" href="/app">Поговорить с Карен и порулить →</a></p>
+</div></section>
+
+<footer><div class="wrap"><span>Карен — IoT-проект на Raspberry Pi</span><a href="https://github.com/Dexteriousx/karen">Код на GitHub</a></div></footer>
+
+<script src="/face.js"></script>
+<script>
+const face=KarenFace(document.getElementById('face'));
+const $=id=>document.getElementById(id);
+let robotFace=null, demoT=0;
+const DEMO=['радость','подмигивает','удивление','думает','обычное','слушает'];
+setInterval(()=>{ if(robotFace) return; face.setFace(DEMO[demoT++%DEMO.length]); face.fakeTalk=face.talking=(demoT%4===0); },2600);
+const up=s=>{if(s==null)return '—';const d=Math.floor(s/86400),h=Math.floor(s%86400/3600),m=Math.floor(s%3600/60);return (d?d+' д ':'')+(h?h+' ч ':'')+m+' мин';};
+async function live(){
+  try{
+    const s=await (await fetch('/api/public')).json();
+    $('live').classList.toggle('on',s.online);
+    $('liveText').textContent=s.online?'Робот в сети — лицо как на его экране':'Робот сейчас не в сети — показываю демо';
+    $('liveMore').textContent=s.online&&s.cpu_temp!=null?`CPU ${Math.round(s.cpu_temp)} °C`:'';
+    $('sOnline').textContent=s.online?'в сети':'не в сети'; $('sOnline').style.color=s.online?'var(--acc)':'var(--muted)';
+    $('sTemp').textContent=s.cpu_temp!=null?s.cpu_temp.toFixed(1)+' °C':'—';
+    $('sFace').textContent=s.face||'—';
+    $('sVoice').textContent=s.online?(s.karen_voice?'включена':'выключена'):'—';
+    $('sUp').textContent=up(s.uptime);
+    robotFace=s.online?(s.face||'обычное'):null;
+    if(robotFace){face.setFace(robotFace);face.fakeTalk=face.talking=false;}
+  }catch(e){ $('liveText').textContent='Нет связи с сайтом'; }
+  setTimeout(live,document.hidden?10000:3000);
+}
+live();
+</script>
+</body>
+</html>

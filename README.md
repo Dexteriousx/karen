@@ -14,16 +14,26 @@
 export GEMINI_API_KEY="ваш_ключ"
 ```
 
-## Веб-версия (`web/`)
-Карен в браузере: лицо, чат, голос. Работает с телефона — микрофон через распознавание речи браузера (Chrome / Safari).
+## IoT-сайт (`web/`)
+Сайт на Render: https://karen-hzjj.onrender.com
+- `/` — презентация проекта (возможности, схема, железо, живой статус робота)
+- `/app` — пульт по паролю: чат с Карен (голос/текст), езда, эмоции на экране робота, «сказать через робота», вкл/выкл голосовой Карен, датчики, журнал событий. Вкладку можно открыть ссылкой: `/app#drive`, `/app#sensors`.
 
-Деплой на Render (бесплатно): New → Blueprint → этот репозиторий (настройки в `render.yaml`). Или на Railway: Root Directory = `/web`. Переменные:
+Схема: телефон → сайт (FastAPI на Render) ⇄ WebSocket ⇄ робот (`web/robot_agent.py` на Raspberry Pi). Робот подключается к сайту сам, поэтому работает за любым Wi‑Fi/хотспотом.
+
+### Render
+Build: `pip install -r requirements.txt` · Start: `python start.py` · Переменные:
 - `GEMINI_API_KEY` — ключ Gemini
-- `KAREN_PASSWORD` — пароль для входа на страницу
+- `KAREN_PASSWORD` — пароль пульта
+- `ROBOT_TOKEN` — секрет для подключения робота (такой же, как на Pi)
 
-Локально: `cd web && pip install -r requirements.txt && GEMINI_API_KEY=... uvicorn app:app`
+### Робот (Raspberry Pi)
+`~/.config/karen-robot.env`:
+```
+KAREN_CLOUD=wss://karen-hzjj.onrender.com/ws/robot
+ROBOT_TOKEN=<тот же, что на Render>
+```
+Запуск агента: `./karen-robot-start.sh` (лог: `~/.cache/karen-logs/robot.log`).
+Окружение: `python3 -m venv --system-site-packages ~/karen-web-env && ~/karen-web-env/bin/pip install -r web/requirements.txt` (gpiozero берётся из системы).
 
-## Пульт робота (на Raspberry Pi)
-Та же веб-версия, запущенная на самом роботе с `KAREN_ROBOT=1`, показывает кнопку 🎮: езда (держи стрелку — едет, отпустил — стоп), скорость, эмоции на экране робота, голос через динамик робота. Голосом/текстом: «вперёд», «назад», «налево», «направо», «стоп».
-
-Запуск: `./karen-web-start.sh` (переменные в `~/.config/karen-web.env`: `GEMINI_API_KEY`, `KAREN_PASSWORD`, `KAREN_ROBOT=1`). Открыть с телефона в той же Wi-Fi сети: `http://<адрес-робота>:8000`.
+Без интернета: `./karen-web-start.sh` запускает сайт прямо на роботе (`KAREN_ROBOT=1`), открыть `http://<адрес-робота>:8000`. Не запускайте одновременно с агентом и `kr.py` — они делят колёса.
