@@ -22,3 +22,8 @@ export GEMINI_API_KEY="ваш_ключ"
 - `KAREN_PASSWORD` — пароль для входа на страницу
 
 Локально: `cd web && pip install -r requirements.txt && GEMINI_API_KEY=... uvicorn app:app`
+
+## Пульт робота (на Raspberry Pi)
+Та же веб-версия, запущенная на самом роботе с `KAREN_ROBOT=1`, показывает кнопку 🎮: езда (держи стрелку — едет, отпустил — стоп), скорость, эмоции на экране робота, голос через динамик робота. Голосом/текстом: «вперёд», «назад», «налево», «направо», «стоп».
+
+Запуск: `./karen-web-start.sh` (переменные в `~/.config/karen-web.env`: `GEMINI_API_KEY`, `KAREN_PASSWORD`, `KAREN_ROBOT=1`). Открыть с телефона в той же Wi-Fi сети: `http://<адрес-робота>:8000`.

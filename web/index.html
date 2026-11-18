@@ -32,6 +32,22 @@
   #mic.on{background:var(--err);color:#fff;animation:pulse 1s infinite}
   @keyframes pulse{50%{box-shadow:0 0 0 8px rgba(255,90,77,.25)}}
   #mute.off{color:var(--err)}
+  #pad{flex:1;overflow-y:auto;padding:14px 16px;display:none;flex-direction:column;align-items:center;gap:14px;border-top:1px solid var(--line);user-select:none;-webkit-user-select:none}
+  body.drive #pad{display:flex} body.drive #log{display:none}
+  #dpad{display:grid;grid-template-columns:repeat(3,76px);grid-template-rows:repeat(3,76px);gap:10px;touch-action:none}
+  .d{border-radius:18px;border:1px solid var(--line);background:var(--panel);color:var(--text);font-size:30px;cursor:pointer;touch-action:none;-webkit-touch-callout:none;display:grid;place-items:center}
+  .d.on{background:var(--acc);color:#04210e;border-color:var(--acc)}
+  .d.stop{color:var(--err);font-size:26px}
+  .row{display:flex;align-items:center;gap:10px;width:100%;max-width:360px;color:var(--muted);font-size:14px}
+  .row input[type=range]{flex:1;accent-color:var(--acc)}
+  #faces{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;max-width:380px}
+  .chip{border:1px solid var(--line);background:var(--panel);color:var(--text);border-radius:16px;padding:7px 12px;font-size:14px;cursor:pointer}
+  .chip:active{border-color:var(--acc)}
+  .switch{display:flex;align-items:center;gap:8px;color:var(--text);font-size:15px;cursor:pointer}
+  .switch input{width:20px;height:20px;accent-color:var(--acc)}
+  #padErr{color:var(--err);font-size:14px;text-align:center;margin:0}
+  #driveBtn{display:none} body.robot #driveBtn{display:grid}
+  body.drive #driveBtn{background:var(--acc);color:#04210e;border-color:var(--acc)}
   #lock{position:fixed;inset:0;background:var(--bg);display:none;align-items:center;justify-content:center;padding:16px;z-index:5}
   #lock.on{display:flex}
   #lock form{flex-direction:column;border:1px solid var(--line);border-radius:16px;padding:24px;gap:12px;width:100%;max-width:340px;background:var(--panel)}
@@ -44,7 +60,23 @@
 <body>
 <div id="faceBox"><canvas id="c" width="800" height="480"></canvas><div id="status"></div></div>
 <div id="log"><div id="empty">Нажми на микрофон и скажи что-нибудь<br>или напиши сообщение.</div></div>
+<div id="pad">
+  <p id="padErr"></p>
+  <div id="dpad">
+    <span></span><button type="button" class="d" data-dir="up" aria-label="Вперёд">▲</button><span></span>
+    <button type="button" class="d" data-dir="left" aria-label="Налево">◀</button>
+    <button type="button" class="d stop" data-dir="stop" aria-label="Стоп">■</button>
+    <button type="button" class="d" data-dir="right" aria-label="Направо">▶</button>
+    <span></span><button type="button" class="d" data-dir="down" aria-label="Назад">▼</button><span></span>
+  </div>
+  <div class="row">Скорость <input type="range" id="speed" min="30" max="100" value="70"> <span id="speedVal">70%</span></div>
+  <div id="faces"></div>
+  <label class="switch"><input type="checkbox" id="robotVoice"> Говорить через динамик робота</label>
+</div>
 <form id="bar" autocomplete="off">
+  <button type="button" class="btn" id="driveBtn" title="Пульт" aria-label="Пульт">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="6"/><path d="M7 10v4M5 12h4"/><circle cx="16" cy="11" r="1"/><circle cx="18" cy="13" r="1"/></svg>
+  </button>
   <button type="button" class="btn" id="mute" title="Звук вкл/выкл" aria-label="Звук">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4V5z"/><path id="waveIcon" d="M15.5 8.5a5 5 0 0 1 0 7M19 5a10 10 0 0 1 0 14"/></svg>
   </button>
@@ -178,7 +210,7 @@ async function send(text){
     if(!r.ok) throw new Error(j.detail||'Ошибка');
     history.push({role:'user',text},{role:'model',text:j.text});
     addMsg('karen',j.text); setFace(j.face||'радость'); status('');
-    await speak(j.text);
+    await speak(j.text, j.face);
   }catch(e){
     if(e.message!=='auth') addMsg('karen',e.message==='Failed to fetch'?'Нет связи с сервером.':e.message,true);
     status('');
@@ -207,7 +239,11 @@ function unlockAudio(){
   (function meter(){analyser.getByteTimeDomainData(buf);let s=0;for(const v of buf){const x=(v-128)/128;s+=x*x;}level=Math.min(1,Math.sqrt(s/buf.length)*4);requestAnimationFrame(meter);})();
 }
 function stopSpeaking(){ if(currentSrc){try{currentSrc.stop()}catch(e){} currentSrc=null;} talking=false; }
-async function speak(text){
+async function speak(text,face){
+  if(robotVoice()){   // голос из динамика робота, лицо на его экране
+    try{ await api('/api/robot-say',{text,face:face||'радость'}); }catch(e){}
+    return;
+  }
   if(!soundOn) return;
   unlockAudio(); stopSpeaking();
   try{
@@ -257,10 +293,66 @@ function showLock(msg){$('lock').classList.add('on');$('lockErr').textContent=ms
 $('lockForm').addEventListener('submit',async e=>{
   e.preventDefault(); password=$('pw').value;
   const r=await fetch('/api/ping',{headers:{'X-Karen-Password':password}});
-  if(r.ok){store.set('karen-pw',password);$('lock').classList.remove('on');}
+  if(r.ok){store.set('karen-pw',password);$('lock').classList.remove('on');setupRobot(await r.json());}
   else $('lockErr').textContent='Неверный пароль';
 });
-fetch('/api/ping',{headers:{'X-Karen-Password':password}}).then(r=>{if(r.status===401)showLock();});
+fetch('/api/ping',{headers:{'X-Karen-Password':password}}).then(async r=>{if(r.status===401)showLock(); else if(r.ok) setupRobot(await r.json());});
+
+/* ===================== Пульт робота ===================== */
+const robotVoice=()=>document.body.classList.contains('robot')&&$('robotVoice').checked;
+$('robotVoice').checked=store.get('karen-robot-voice')==='1';
+$('robotVoice').onchange=e=>store.set('karen-robot-voice',e.target.checked?'1':'0');
+$('driveBtn').onclick=()=>{document.body.classList.toggle('drive');store.set('karen-drive',document.body.classList.contains('drive')?'1':'0');};
+
+function setupRobot(info){
+  if(!info.robot) return;
+  document.body.classList.add('robot');
+  if(store.get('karen-drive')==='1') document.body.classList.add('drive');
+  if(!info.motors){ $('padErr').textContent=info.motor_error||'Колёса не подключены'; $('dpad').style.opacity=.35; }
+}
+
+// эмоции на экране робота
+const FACE_BTNS=[['обычное','🙂'],['радость','😄'],['грусть','😢'],['злость','😠'],['удивление','😮'],['думает','🤔'],['сонная','😴'],['подмигивает','😉']];
+for(const [name,icon] of FACE_BTNS){
+  const b=document.createElement('button');b.type='button';b.className='chip';b.textContent=icon+' '+name;
+  b.onclick=()=>{setFace(name);api('/api/face',{face:name}).catch(()=>{});};
+  $('faces').append(b);
+}
+
+// езда: держишь кнопку — едет, отпустил — стоп
+const speedEl=$('speed');
+speedEl.value=store.get('karen-speed')||70; $('speedVal').textContent=speedEl.value+'%';
+speedEl.oninput=()=>{$('speedVal').textContent=speedEl.value+'%';store.set('karen-speed',speedEl.value);};
+const DIRS={up:[1,1],down:[-1,-1],left:[-1,1],right:[1,-1],stop:[0,0]};
+let driveDir=null, driveTimer=0;
+function sendDrive(dir){
+  const s=speedEl.value/100, [l,r]=DIRS[dir]||[0,0];
+  fetch('/api/drive',{method:'POST',keepalive:true,headers:{'Content-Type':'application/json','X-Karen-Password':password},body:JSON.stringify({left:l*s,right:r*s})})
+    .then(async r=>{ if(!r.ok){ const j=await r.json().catch(()=>({})); $('padErr').textContent=j.detail||'Ошибка'; } })
+    .catch(()=>{$('padErr').textContent='Нет связи с роботом';});
+}
+function startDrive(dir,btn){
+  stopDrive(); if(dir==='stop'){sendDrive('stop');return;}
+  driveDir=dir; btn?.classList.add('on'); $('padErr').textContent='';
+  sendDrive(dir); driveTimer=setInterval(()=>sendDrive(dir),150);   // робот сам остановится, если команды перестанут приходить
+}
+function stopDrive(){
+  if(!driveDir) return;
+  clearInterval(driveTimer); driveDir=null;
+  document.querySelectorAll('.d.on').forEach(b=>b.classList.remove('on'));
+  sendDrive('stop');
+}
+document.querySelectorAll('.d').forEach(b=>{
+  b.addEventListener('pointerdown',e=>{e.preventDefault();b.setPointerCapture(e.pointerId);startDrive(b.dataset.dir,b);});
+  ['pointerup','pointercancel','lostpointercapture'].forEach(ev=>b.addEventListener(ev,stopDrive));
+  b.addEventListener('contextmenu',e=>e.preventDefault());
+});
+window.addEventListener('blur',stopDrive);
+document.addEventListener('visibilitychange',()=>{if(document.hidden)stopDrive();});
+// стрелки на клавиатуре (с компьютера)
+const KEYS={ArrowUp:'up',ArrowDown:'down',ArrowLeft:'left',ArrowRight:'right'};
+document.addEventListener('keydown',e=>{ if(!document.body.classList.contains('drive')||e.target===input||!KEYS[e.key]) return; e.preventDefault(); if(driveDir!==KEYS[e.key]) startDrive(KEYS[e.key],document.querySelector(`.d[data-dir=${KEYS[e.key]}]`)); });
+document.addEventListener('keyup',e=>{ if(KEYS[e.key]===driveDir) stopDrive(); });
 </script>
 </body>
 </html>
