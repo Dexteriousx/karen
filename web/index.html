@@ -1,0 +1,266 @@
+<!doctype html>
+<html lang="ru" translate="no">
+<head>
+<meta charset="utf-8">
+<meta name="google" content="notranslate">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,interactive-widget=resizes-content">
+<meta name="theme-color" content="#050608">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<title>Карен</title>
+<style>
+  :root{--bg:#050608;--panel:#0d1014;--line:#1c232b;--text:#dfe7ee;--muted:#7d8a96;--acc:#39ff6a;--you:#16324a;--err:#ff5a4d}
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font:16px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+  body{display:flex;flex-direction:column;height:100dvh;max-width:820px;margin:0 auto}
+  #faceBox{flex:none;position:relative;padding:env(safe-area-inset-top) 0 0}
+  canvas{display:block;width:100%;aspect-ratio:800/480;max-height:42dvh;object-fit:contain}
+  #status{position:absolute;left:0;right:0;bottom:6px;text-align:center;font-size:13px;color:var(--muted);pointer-events:none}
+  #log{flex:1;overflow-y:auto;padding:12px 16px;display:flex;flex-direction:column;gap:8px;border-top:1px solid var(--line)}
+  .msg{max-width:85%;padding:9px 13px;border-radius:16px;white-space:pre-wrap;word-wrap:break-word}
+  .me{align-self:flex-end;background:var(--you);border-bottom-right-radius:4px}
+  .karen{align-self:flex-start;background:var(--panel);border:1px solid var(--line);border-bottom-left-radius:4px}
+  .karen.err{color:var(--err)}
+  .karen button{margin-left:6px;background:none;border:0;color:var(--muted);font-size:15px;cursor:pointer;padding:0 2px}
+  #empty{margin:auto;text-align:center;color:var(--muted);font-size:15px}
+  form{flex:none;display:flex;gap:8px;padding:10px 12px calc(10px + env(safe-area-inset-bottom));border-top:1px solid var(--line);background:var(--bg)}
+  #text{flex:1;min-width:0;background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:22px;padding:10px 16px;font-size:16px;outline:none}
+  #text:focus{border-color:#2f6b45}
+  .btn{flex:none;width:46px;height:46px;border-radius:50%;border:0;display:grid;place-items:center;cursor:pointer;background:var(--panel);color:var(--text);border:1px solid var(--line)}
+  .btn svg{width:22px;height:22px}
+  #mic{background:var(--acc);color:#04210e;border:0}
+  #mic.on{background:var(--err);color:#fff;animation:pulse 1s infinite}
+  @keyframes pulse{50%{box-shadow:0 0 0 8px rgba(255,90,77,.25)}}
+  #mute.off{color:var(--err)}
+  #lock{position:fixed;inset:0;background:var(--bg);display:none;align-items:center;justify-content:center;padding:16px;z-index:5}
+  #lock.on{display:flex}
+  #lock form{flex-direction:column;border:1px solid var(--line);border-radius:16px;padding:24px;gap:12px;width:100%;max-width:340px;background:var(--panel)}
+  #lock h1{margin:0;font-size:20px;color:var(--acc)}
+  #lock input{background:var(--bg);color:var(--text);border:1px solid var(--line);border-radius:10px;padding:12px;font-size:16px}
+  #lock button{background:var(--acc);color:#04210e;border:0;border-radius:10px;padding:12px;font-size:16px;font-weight:600;cursor:pointer}
+  #lockErr{color:var(--err);font-size:14px;min-height:1em;margin:0}
+</style>
+</head>
+<body>
+<div id="faceBox"><canvas id="c" width="800" height="480"></canvas><div id="status"></div></div>
+<div id="log"><div id="empty">Нажми на микрофон и скажи что-нибудь<br>или напиши сообщение.</div></div>
+<form id="bar" autocomplete="off">
+  <button type="button" class="btn" id="mute" title="Звук вкл/выкл" aria-label="Звук">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4V5z"/><path id="waveIcon" d="M15.5 8.5a5 5 0 0 1 0 7M19 5a10 10 0 0 1 0 14"/></svg>
+  </button>
+  <input id="text" placeholder="Сообщение Карен…" enterkeyhint="send">
+  <button type="button" class="btn" id="mic" title="Говорить" aria-label="Говорить">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0 0 14 0M12 17v5"/></svg>
+  </button>
+</form>
+<div id="lock"><form id="lockForm"><h1>Карен</h1><input id="pw" type="password" placeholder="Пароль" autocomplete="current-password"><button>Войти</button><p id="lockErr"></p></form></div>
+
+<script>
+/* ===================== Лицо (из «Лицо Карен.html») ===================== */
+const cv=document.getElementById('c'), g=cv.getContext('2d');
+const W=800,H=480;
+const FACES={
+  'обычное':   {open:1,   brow:0,   browY:0,   curve:.35, mopen:0,   mw:70,  cheek:0, sz:1,   lx:0,  ly:0,   col:'#5ef2ff', wink:0},
+  'радость':   {open:1,   brow:-.1, browY:-6,  curve:2.3, mopen:.8,  mw:200, cheek:.65, sz:1,   lx:0,  ly:0,   col:'#39ff6a', wink:0},
+  'грусть':    {open:.75, brow:-1,  browY:6,   curve:-.9, mopen:0,   mw:60,  cheek:0, sz:1,   lx:0,  ly:.6,  col:'#7aa8ff', wink:0},
+  'злость':    {open:.65, brow:1,   browY:10,  curve:-.5, mopen:0,   mw:85,  cheek:0, sz:1,   lx:0,  ly:0,   col:'#ff5a4d', wink:0},
+  'удивление': {open:1.25,brow:-.2, browY:-22, curve:0,   mopen:1,   mw:38,  cheek:0, sz:1.1, lx:0,  ly:0,   col:'#ffffff', wink:0},
+  'думает':    {open:.85, brow:.3,  browY:-4,  curve:-.05,mopen:0,   mw:42,  cheek:0, sz:1,   lx:-.9,ly:-.8, col:'#ffd166', wink:0},
+  'сонная':    {open:.14, brow:0,   browY:0,   curve:.15, mopen:0,   mw:40,  cheek:0, sz:1,   lx:0,  ly:.4,  col:'#8fa6c8', wink:0},
+  'слушает':   {open:1.1, brow:-.3, browY:-10, curve:.2,  mopen:0,   mw:50,  cheek:0, sz:1.05,lx:0,  ly:0,   col:'#9dff7a', wink:0},
+  'подмигивает':{open:1,  brow:-.1, browY:-4,  curve:.9,  mopen:.15, mw:95,  cheek:.3, sz:1,   lx:0,  ly:0,   col:'#ff9de6', wink:1},
+};
+const cur=JSON.parse(JSON.stringify(FACES['обычное']));
+let target=FACES['обычное'], faceName='обычное', talking=false;
+let blink=0, nextBlink=2, lookTX=0, lookTY=0, nextLook=1.5, mouthOpenNow=0, talkMix=0;
+const NUM=['open','brow','browY','curve','mopen','mw','cheek','sz','lx','ly','wink'];
+const hex=h=>[1,3,5].map(i=>parseInt(h.substr(i,2),16)), lerp=(a,b,k)=>a+(b-a)*k;
+let colCur=hex('#5ef2ff');
+function setFace(n){ if(FACES[n]){faceName=n;target=FACES[n];} }
+
+function rr(x,y,w,h,r){r=Math.min(r,w/2,h/2);g.beginPath();g.moveTo(x+r,y);g.arcTo(x+w,y,x+w,y+h,r);g.arcTo(x+w,y+h,x,y+h,r);g.arcTo(x,y+h,x,y,r);g.arcTo(x,y,x+w,y,r);g.closePath();}
+function drawEye(cx,cy,w,h,col,cheek){
+  const hh=Math.max(6,h);
+  g.save();g.shadowColor=col;g.shadowBlur=28;g.fillStyle=col;rr(cx-w/2,cy-hh/2,w,hh,Math.min(w,hh)*.45);g.fill();g.restore();
+  if(cheek>0.01){g.fillStyle='#050608';g.beginPath();g.ellipse(cx,cy+hh*.5+8-cheek*hh*.55,w*.8,hh*.62,0,0,Math.PI*2);g.fill();}
+}
+function drawBrow(cx,cy,w,tilt,col,side){
+  const inner=-side, dy=tilt*22;
+  g.save();g.strokeStyle=col;g.lineWidth=12;g.lineCap='round';g.shadowColor=col;g.shadowBlur=18;
+  g.beginPath();g.moveTo(cx+inner*(w/2),cy+dy);g.lineTo(cx-inner*(w/2),cy-dy);g.stroke();g.restore();
+}
+function drawWaves(col,amp,t,alpha){
+  const cy=H/2,N=200, waves=[[1.6,2.2,0,1,8,1],[2.3,-2.9,1.7,.75,5,.65],[3.1,3.6,3.1,.55,4,.45],[1.1,-1.5,4.4,.85,3,.35]];
+  g.save();g.strokeStyle=col;g.lineCap='round';g.lineJoin='round';g.shadowColor=col;g.shadowBlur=24;
+  for(const [f,s,ph,a,lw,op] of waves){
+    g.globalAlpha=alpha*op;g.lineWidth=lw;g.beginPath();
+    for(let i=0;i<=N;i++){const u=i/N,x=u*W,env=Math.pow(Math.sin(u*Math.PI),2),y=cy+Math.sin(u*Math.PI*2*f+t*s+ph)*amp*a*env;i?g.lineTo(x,y):g.moveTo(x,y);}
+    g.stroke();
+  }
+  g.restore();
+}
+function drawMouth(cx,cy,w,curve,open,col){
+  g.save();g.strokeStyle=col;g.fillStyle=col;g.lineWidth=11;g.lineCap='round';g.lineJoin='round';g.shadowColor=col;g.shadowBlur=22;
+  const c=curve*55;
+  if(open>0.04){
+    const oh=open*70;
+    g.beginPath();g.moveTo(cx-w,cy);g.quadraticCurveTo(cx,cy+c,cx+w,cy);g.quadraticCurveTo(cx,cy+c+oh*1.2,cx-w,cy);g.closePath();
+    g.fillStyle='#1a0b12';g.fill();g.stroke();
+    g.save();g.clip();g.fillStyle='rgba(255,120,150,.55)';g.beginPath();g.ellipse(cx,cy+c*.5+oh*.95,w*.45,oh*.35,0,0,Math.PI*2);g.fill();g.restore();
+  }else{g.beginPath();g.moveTo(cx-w,cy);g.quadraticCurveTo(cx,cy+c*2,cx+w,cy);g.stroke();}
+  g.restore();
+}
+let level=0; // громкость голоса Карен 0..1 (из анализатора)
+let last=performance.now();
+function frame(now){
+  const dt=Math.min(.05,(now-last)/1000);last=now;
+  const k=1-Math.pow(.0009,dt);
+  for(const n of NUM) cur[n]=lerp(cur[n],target[n],k);
+  const tc=hex(target.col); for(let i=0;i<3;i++) colCur[i]=lerp(colCur[i],tc[i],k);
+  const col='rgb('+colCur.map(v=>v|0).join(',')+')';
+  nextBlink-=dt;
+  if(nextBlink<=0&&blink===0){blink=.0001;nextBlink=2+Math.random()*3.5;}
+  let bl=1;
+  if(blink>0){blink+=dt*7;bl=Math.abs(Math.cos(blink*Math.PI));if(blink>=1){blink=0;bl=1;}}
+  nextLook-=dt;
+  if(nextLook<=0){lookTX=(Math.random()-.5)*1.2;lookTY=(Math.random()-.5)*.8;nextLook=1+Math.random()*2.5;}
+  const lx=cur.lx+lookTX*.35, ly=cur.ly+lookTY*.35, t=now/1000;
+  let mo=cur.mopen;
+  if(talking){ mo=Math.max(.12, level*1.6); }
+  mouthOpenNow=lerp(mouthOpenNow,mo,1-Math.pow(.00001,dt));
+  g.fillStyle='#050608';g.fillRect(0,0,W,H);
+  talkMix=lerp(talkMix,talking?1:0,1-Math.pow(.002,dt));
+  if(talkMix>.01) drawWaves(col,40+mouthOpenNow*150,t,talkMix);
+  g.save();g.globalAlpha=Math.max(0,1-talkMix*1.1);
+  const sz=cur.sz, ew=130*sz, eh=150*sz*cur.open*bl, ex=[255+lx*22,545+lx*22], ey=185+ly*18;
+  drawEye(ex[0],ey,ew,eh,col,cur.cheek);
+  drawEye(ex[1],ey,ew,eh*(1-cur.wink*.93),col,cur.cheek*(1-cur.wink));
+  const by=ey-100*sz+cur.browY;
+  if(Math.abs(cur.brow)>.05||cur.browY<-8){drawBrow(ex[0],by,120,cur.brow,col,-1);drawBrow(ex[1],by,120,cur.brow,col,1);}
+  drawMouth(400+lx*12,335+ly*8,cur.mw,cur.curve,talking?cur.mopen:mouthOpenNow,col);
+  g.restore();
+  if(faceName==='слушает'){const p=(Math.sin(t*4)+1)/2;g.strokeStyle='rgba(157,255,122,'+(.15+p*.35)*(1-talkMix)+')';g.lineWidth=6;rr(14,14,W-28,H-28,40);g.stroke();}
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+/* ===================== Чат ===================== */
+const $=id=>document.getElementById(id);
+const log=$('log'), input=$('text'), micBtn=$('mic'), statusEl=$('status');
+const store={get:k=>{try{return localStorage.getItem(k)}catch(e){return null}},set:(k,v)=>{try{localStorage.setItem(k,v)}catch(e){}}};
+let password=store.get('karen-pw')||'';
+let history=[];          // [{role:'user'|'model', text}]
+let busy=false;
+let soundOn=store.get('karen-sound')!=='0';
+
+function status(s){statusEl.textContent=s||'';}
+function addMsg(who,text,err){
+  $('empty')?.remove();
+  const d=document.createElement('div');
+  d.className='msg '+(who==='me'?'me':'karen'+(err?' err':''));
+  d.textContent=text;
+  if(who!=='me'&&!err){const b=document.createElement('button');b.textContent='🔊';b.title='Повторить вслух';b.onclick=()=>speak(text);d.append(b);}
+  log.append(d);log.scrollTop=log.scrollHeight;
+}
+async function api(path,body){
+  const r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json','X-Karen-Password':password},body:JSON.stringify(body)});
+  if(r.status===401){showLock('Неверный пароль');throw new Error('auth');}
+  return r;
+}
+async function send(text){
+  text=text.trim(); if(!text||busy) return;
+  busy=true; unlockAudio(); stopSpeaking();
+  addMsg('me',text); input.value='';
+  setFace('думает'); status('Карен думает…');
+  try{
+    const r=await api('/api/chat',{message:text,history:history.slice(-20)});
+    const j=await r.json();
+    if(!r.ok) throw new Error(j.detail||'Ошибка');
+    history.push({role:'user',text},{role:'model',text:j.text});
+    addMsg('karen',j.text); setFace(j.face||'радость'); status('');
+    await speak(j.text);
+  }catch(e){
+    if(e.message!=='auth') addMsg('karen',e.message==='Failed to fetch'?'Нет связи с сервером.':e.message,true);
+    status('');
+  }finally{
+    busy=false; if(!talking) setTimeout(()=>{if(!talking&&!busy&&faceName!=='слушает')setFace('обычное')},2500);
+  }
+}
+$('bar').addEventListener('submit',e=>{e.preventDefault();send(input.value);});
+
+/* ===================== Голос Карен (Web Audio + «компьютерный» фильтр) ===================== */
+let ac=null, analyser=null, fxIn=null, currentSrc=null;
+function unlockAudio(){
+  if(ac){ if(ac.state==='suspended') ac.resume(); return; }
+  ac=new (window.AudioContext||window.webkitAudioContext)();
+  // цепочка как VOICE_FX в Karen2.py: highpass 170 → lowpass 5200 → короткое эхо → усиление
+  const hp=ac.createBiquadFilter(); hp.type='highpass'; hp.frequency.value=170;
+  const lp=ac.createBiquadFilter(); lp.type='lowpass'; lp.frequency.value=5200;
+  const eq=ac.createBiquadFilter(); eq.type='peaking'; eq.frequency.value=1800; eq.Q.value=1.2; eq.gain.value=2.5;
+  const dl=ac.createDelay(); dl.delayTime.value=.011; const fb=ac.createGain(); fb.gain.value=.22;
+  const out=ac.createGain(); out.gain.value=1.3;
+  analyser=ac.createAnalyser(); analyser.fftSize=512;
+  hp.connect(lp); lp.connect(eq); eq.connect(out); eq.connect(dl); dl.connect(fb); fb.connect(out);
+  out.connect(analyser); analyser.connect(ac.destination);
+  fxIn=hp;
+  const buf=new Uint8Array(analyser.fftSize);
+  (function meter(){analyser.getByteTimeDomainData(buf);let s=0;for(const v of buf){const x=(v-128)/128;s+=x*x;}level=Math.min(1,Math.sqrt(s/buf.length)*4);requestAnimationFrame(meter);})();
+}
+function stopSpeaking(){ if(currentSrc){try{currentSrc.stop()}catch(e){} currentSrc=null;} talking=false; }
+async function speak(text){
+  if(!soundOn) return;
+  unlockAudio(); stopSpeaking();
+  try{
+    status('…');
+    const r=await api('/api/say',{text});
+    if(!r.ok) throw new Error();
+    const audio=await ac.decodeAudioData(await r.arrayBuffer());
+    const src=ac.createBufferSource(); src.buffer=audio; src.connect(fxIn);
+    currentSrc=src; talking=true; status('');
+    await new Promise(res=>{src.onended=res; src.start();});
+    if(currentSrc===src){currentSrc=null; talking=false;}
+  }catch(e){ talking=false; if(e.message!=='auth') status('Не получилось озвучить'); }
+}
+function paintMute(){$('mute').classList.toggle('off',!soundOn);$('waveIcon').style.display=soundOn?'':'none';}
+$('mute').onclick=()=>{soundOn=!soundOn;store.set('karen-sound',soundOn?'1':'0');if(!soundOn)stopSpeaking();paintMute();};
+paintMute();
+
+/* ===================== Микрофон (распознавание речи браузером) ===================== */
+const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+let rec=null, listening=false;
+if(!SR){ micBtn.onclick=()=>{addMsg('karen','Этот браузер не умеет распознавать речь. Открой в Chrome или Safari, или пиши текстом.',true);}; }
+else{
+  micBtn.onclick=()=>{
+    unlockAudio();
+    if(listening){rec.stop();return;}
+    stopSpeaking();
+    rec=new SR(); rec.lang='ru-RU'; rec.interimResults=true; rec.maxAlternatives=1;
+    let finalText='';
+    rec.onstart=()=>{listening=true;micBtn.classList.add('on');setFace('слушает');status('Слушаю…');};
+    rec.onresult=e=>{
+      let interim=''; finalText='';
+      for(const r of e.results){ if(r.isFinal) finalText+=r[0].transcript; else interim+=r[0].transcript; }
+      input.value=finalText+interim;
+    };
+    rec.onerror=e=>{ if(e.error==='not-allowed'||e.error==='service-not-allowed') addMsg('karen','Нет доступа к микрофону. Разреши его в настройках браузера.',true); };
+    rec.onend=()=>{
+      listening=false;micBtn.classList.remove('on');status('');
+      const t=(finalText||input.value).trim();
+      if(t) send(t); else setFace('обычное');
+    };
+    rec.start();
+  };
+}
+
+/* ===================== Пароль ===================== */
+function showLock(msg){$('lock').classList.add('on');$('lockErr').textContent=msg||'';$('pw').focus();}
+$('lockForm').addEventListener('submit',async e=>{
+  e.preventDefault(); password=$('pw').value;
+  const r=await fetch('/api/ping',{headers:{'X-Karen-Password':password}});
+  if(r.ok){store.set('karen-pw',password);$('lock').classList.remove('on');}
+  else $('lockErr').textContent='Неверный пароль';
+});
+fetch('/api/ping',{headers:{'X-Karen-Password':password}}).then(r=>{if(r.status===401)showLock();});
+</script>
+</body>
+</html>

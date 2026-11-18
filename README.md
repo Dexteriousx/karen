@@ -13,3 +13,12 @@
 ```bash
 export GEMINI_API_KEY="ваш_ключ"
 ```
+
+## Веб-версия (`web/`)
+Карен в браузере: лицо, чат, голос. Работает с телефона — микрофон через распознавание речи браузера (Chrome / Safari).
+
+Деплой на Railway: проект из этого репозитория, **Root Directory = `/web`**, переменные:
+- `GEMINI_API_KEY` — ключ Gemini
+- `KAREN_PASSWORD` — пароль для входа на страницу
+
+Локально: `cd web && pip install -r requirements.txt && GEMINI_API_KEY=... uvicorn app:app`
