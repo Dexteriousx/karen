@@ -17,7 +17,7 @@ export GEMINI_API_KEY="ваш_ключ"
 ## Веб-версия (`web/`)
 Карен в браузере: лицо, чат, голос. Работает с телефона — микрофон через распознавание речи браузера (Chrome / Safari).
 
-Деплой на Railway: проект из этого репозитория, **Root Directory = `/web`**, переменные:
+Деплой на Render (бесплатно): New → Blueprint → этот репозиторий (настройки в `render.yaml`). Или на Railway: Root Directory = `/web`. Переменные:
 - `GEMINI_API_KEY` — ключ Gemini
 - `KAREN_PASSWORD` — пароль для входа на страницу
 

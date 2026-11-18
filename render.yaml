@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: karen
+    runtime: python
+    plan: free
+    rootDir: web
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.13.1
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: KAREN_PASSWORD
+        sync: false
