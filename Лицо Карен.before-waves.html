@@ -1,0 +1,295 @@
+<!doctype html>
+<html lang="ru" translate="no">
+<head>
+<meta charset="utf-8">
+<meta name="google" content="notranslate">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Лицо Карен</title>
+<style>
+  html,body{margin:0;height:100%;background:#000;overflow:hidden;cursor:none}
+  canvas{display:block;width:100vw;height:100vh;object-fit:contain;background:#050608}
+  #hint{position:fixed;left:8px;bottom:6px;font:12px/1.3 sans-serif;color:#456;opacity:.0;transition:opacity .3s;pointer-events:none;white-space:pre}
+  body.show #hint{opacity:.9}
+  body.mouse{cursor:default}
+  #exit{position:fixed;top:14px;right:14px;width:64px;height:64px;border-radius:50%;
+        border:2px solid #39ff6a;background:rgba(5,6,8,.85);color:#39ff6a;font:bold 34px/1 sans-serif;
+        cursor:pointer;opacity:0;pointer-events:none;transition:opacity .3s;z-index:10}
+  body.mouse #exit{opacity:1;pointer-events:auto}
+  #bye{position:fixed;inset:0;display:none;align-items:center;justify-content:center;flex-direction:column;
+       background:#050608;color:#39ff6a;font:22px/1.5 sans-serif;text-align:center;z-index:20}
+  #bye.on{display:flex}
+</style>
+</head>
+<body>
+<canvas id="c" width="800" height="480"></canvas>
+<div id="hint"></div>
+<button id="exit" title="Выход (Esc)">✕</button>
+<div id="bye">Карен спит. Zzz…<br><span style="font-size:16px;opacity:.7">Закройте окно: Alt+F4 или Ctrl+W</span></div>
+<script>
+/* ===== Лицо Карен: экран 800x480 (Waveshare 7") =====
+   Клавиши: 1 обычное  2 радость  3 грусть  4 злость  5 удивление  6 думает  7 сонная  8 слушает  9 подмигивает
+            Т - говорит вкл/выкл   А - автодемо   H - показать подсказку   F - полный экран
+   Из программы: файл состояния.json рядом {"лицо":"радость","говорит":true} (нужен python3 -m http.server)
+   Или адрес страницы с #радость / #talk
+*/
+const cv=document.getElementById('c'), g=cv.getContext('2d');
+const W=800,H=480;
+
+const FACES={
+  'обычное':   {open:1,   brow:0,   browY:0,   curve:.35, mopen:0,   mw:70,  cheek:0, sz:1,   lx:0,  ly:0,   col:'#5ef2ff', wink:0},
+  'радость':   {open:1,   brow:-.1, browY:-6,  curve:2.3, mopen:.8,  mw:200, cheek:.65, sz:1,   lx:0,  ly:0,   col:'#39ff6a', wink:0},
+  'грусть':    {open:.75, brow:-1,  browY:6,   curve:-.9, mopen:0,   mw:60,  cheek:0, sz:1,   lx:0,  ly:.6,  col:'#7aa8ff', wink:0},
+  'злость':    {open:.65, brow:1,   browY:10,  curve:-.5, mopen:0,   mw:85,  cheek:0, sz:1,   lx:0,  ly:0,   col:'#ff5a4d', wink:0},
+  'удивление': {open:1.25,brow:-.2, browY:-22, curve:0,   mopen:1,   mw:38,  cheek:0, sz:1.1, lx:0,  ly:0,   col:'#ffffff', wink:0},
+  'думает':    {open:.85, brow:.3,  browY:-4,  curve:-.05,mopen:0,   mw:42,  cheek:0, sz:1,   lx:-.9,ly:-.8, col:'#ffd166', wink:0},
+  'сонная':    {open:.14, brow:0,   browY:0,   curve:.15, mopen:0,   mw:40,  cheek:0, sz:1,   lx:0,  ly:.4,  col:'#8fa6c8', wink:0},
+  'слушает':   {open:1.1, brow:-.3, browY:-10, curve:.2,  mopen:0,   mw:50,  cheek:0, sz:1.05,lx:0,  ly:0,   col:'#9dff7a', wink:0},
+  'подмигивает':{open:1,  brow:-.1, browY:-4,  curve:.9,  mopen:.15, mw:95,  cheek:.3, sz:1,   lx:0,  ly:0,   col:'#ff9de6', wink:1},
+  'спит':      {open:.04, brow:0,   browY:0,   curve:.25, mopen:0,   mw:35,  cheek:0, sz:1,   lx:0,  ly:.5,  col:'#5a6f96', wink:0},
+};
+const ORDER=Object.keys(FACES);
+
+// текущее (сглаженное) состояние
+const cur=JSON.parse(JSON.stringify(FACES['обычное']));
+let target=FACES['обычное'], faceName='обычное';
+let talking=false, demo=false, demoT=0;
+let blink=0, nextBlink=2, lookTX=0, lookTY=0, nextLook=1.5;
+let mouthOpenNow=0;
+
+const NUM=['open','brow','browY','curve','mopen','mw','cheek','sz','lx','ly','wink'];
+function hex(h){return [1,3,5].map(i=>parseInt(h.substr(i,2),16))}
+function lerp(a,b,k){return a+(b-a)*k}
+let colCur=hex('#5ef2ff');
+
+function setFace(n){ if(FACES[n]){faceName=n;target=FACES[n];} }
+function setTalking(v){ talking=!!v; }
+window.setFace=setFace; window.setTalking=setTalking;
+
+function rr(x,y,w,h,r){
+  r=Math.min(r,w/2,h/2);
+  g.beginPath();
+  g.moveTo(x+r,y);g.arcTo(x+w,y,x+w,y+h,r);g.arcTo(x+w,y+h,x,y+h,r);
+  g.arcTo(x,y+h,x,y,r);g.arcTo(x,y,x+w,y,r);g.closePath();
+}
+
+function drawEye(cx,cy,w,h,col,cheek,wink){
+  const hh=Math.max(6,h);
+  g.save();
+  g.shadowColor=col;g.shadowBlur=28;g.fillStyle=col;
+  rr(cx-w/2,cy-hh/2,w,hh,Math.min(w,hh)*.45);g.fill();
+  g.restore();
+  if(cheek>0.01){ // "щёчка" закрывает низ глаза -> выгнутая улыбающаяся дуга
+    g.fillStyle='#050608';
+    g.beginPath();
+    g.ellipse(cx,cy+hh*.5+8-cheek*hh*.55,w*.8,hh*.62,0,0,Math.PI*2);
+    g.fill();
+  }
+}
+
+function drawBrow(cx,cy,w,tilt,col,side){
+  // tilt>0 злость (внутренний край вниз), tilt<0 грусть (внутренний край вверх)
+  const inner=-side; // side=-1 левая бровь, +1 правая; внутренний край смотрит к центру
+  const dy=tilt*22;
+  g.save();
+  g.strokeStyle=col;g.lineWidth=12;g.lineCap='round';g.shadowColor=col;g.shadowBlur=18;
+  g.beginPath();
+  g.moveTo(cx+inner*(w/2),cy+dy);
+  g.lineTo(cx-inner*(w/2),cy-dy);
+  g.stroke();g.restore();
+}
+
+// ЭКГ: один удар сердца, p в [0,1) -> высота (1 = пик R)
+function G(p,m,s){const d=p-m;return Math.exp(-d*d/(2*s*s))}
+function ecg(p){
+  p=((p%1)+1)%1;
+  return .14*G(p,.15,.025) - .18*G(p,.285,.008) + G(p,.31,.009)
+       - .38*G(p,.335,.01) + .28*G(p,.55,.04);
+}
+// рот-кардиограмма: линия улыбки + бегущий пульс
+function drawHeartMouth(cx,cy,w,curve,amp,col,t){
+  // линия на всю ширину экрана, от края до края
+  cx=W/2;
+  const c=curve*25, span=W/2+10, beats=4.5, speed=1.4, N=400;
+  g.save();
+  g.strokeStyle=col;g.lineWidth=9;g.lineCap='round';g.lineJoin='round';
+  g.shadowColor=col;g.shadowBlur=26;
+  g.beginPath();
+  for(let i=0;i<=N;i++){
+    const u=i/N*2-1;                       // -1..1
+    const x=cx+u*span;
+    const base=cy+c*(1-u*u);               // дуга улыбки
+    const fade=1;                          // пульс по всей линии
+    const y=base-ecg(u*beats/2+.5-t*speed)*amp*fade;
+    if(i===0) g.moveTo(x,y); else g.lineTo(x,y);
+  }
+  g.stroke();
+  g.restore();
+}
+
+function drawMouth(cx,cy,w,curve,open,col){
+  g.save();
+  g.strokeStyle=col;g.fillStyle=col;g.lineWidth=11;g.lineCap='round';g.lineJoin='round';
+  g.shadowColor=col;g.shadowBlur=22;
+  const c=curve*55;
+  if(open>0.04){
+    const oh=open*70;
+    g.beginPath();
+    g.moveTo(cx-w,cy);
+    g.quadraticCurveTo(cx,cy+c,cx+w,cy);
+    g.quadraticCurveTo(cx,cy+c+oh*1.2,cx-w,cy);
+    g.closePath();
+    g.fillStyle='#1a0b12';g.fill();g.stroke();
+    // язык
+    g.save();g.clip();
+    g.fillStyle='rgba(255,120,150,.55)';
+    g.beginPath();g.ellipse(cx,cy+c*.5+oh*.95,w*.45,oh*.35,0,0,Math.PI*2);g.fill();
+    g.restore();
+  }else{
+    g.beginPath();
+    g.moveTo(cx-w,cy);
+    g.quadraticCurveTo(cx,cy+c*2,cx+w,cy);
+    g.stroke();
+  }
+  g.restore();
+}
+
+let last=performance.now();
+function frame(now){
+  const dt=Math.min(.05,(now-last)/1000);last=now;
+  const k=1-Math.pow(.0009,dt); // плавный переход
+
+  if(demo){ demoT-=dt; if(demoT<=0){ demoT=2.6; const n=ORDER[(ORDER.indexOf(faceName)+1)%ORDER.length]; setFace(n); talking=Math.random()<.4; } }
+
+  for(const n of NUM) cur[n]=lerp(cur[n],target[n],k);
+  const tc=hex(target.col); for(let i=0;i<3;i++) colCur[i]=lerp(colCur[i],tc[i],k);
+  const col='rgb('+colCur.map(v=>v|0).join(',')+')';
+
+  // моргание
+  nextBlink-=dt;
+  if(nextBlink<=0 && blink===0){blink=.0001;nextBlink=2+Math.random()*3.5;}
+  let bl=1;
+  if(blink>0){blink+=dt*7; bl=Math.abs(Math.cos(blink*Math.PI/1.0)); if(blink>=1){blink=0;bl=1;}}
+  // взгляд
+  nextLook-=dt;
+  if(faceName==='спит'){lookTX=0;lookTY=0;bl=1;nextLook=1;}
+  else if(nextLook<=0){lookTX=(Math.random()-.5)*1.2;lookTY=(Math.random()-.5)*.8;nextLook=1+Math.random()*2.5;}
+  const lx=cur.lx+lookTX*.35, ly=cur.ly+lookTY*.35;
+
+  // разговор
+  const t=now/1000;
+  let mo=cur.mopen;
+  if(talking){ const v=(Math.sin(t*14)+Math.sin(t*9.3+1)+Math.sin(t*5.1+2))/3; mo=Math.max(cur.mopen*.4,.12+Math.abs(v)*.85); }
+  mouthOpenNow=lerp(mouthOpenNow,mo,1-Math.pow(.00001,dt));
+
+  g.clearRect(0,0,W,H);
+  g.fillStyle='#050608';g.fillRect(0,0,W,H);
+
+  const sz=cur.sz;
+  const ew=130*sz, eh=150*sz*cur.open*bl;
+  const ex=[255+lx*22, 545+lx*22], ey=185+ly*18;
+  // левый глаз
+  drawEye(ex[0],ey,ew,eh,col,cur.cheek,0);
+  // правый глаз (подмигивание)
+  const rh = eh*(1-cur.wink*.93);
+  drawEye(ex[1],ey,ew,rh,col,cur.cheek*(1-cur.wink),0);
+  // брови
+  const by=ey-100*sz+cur.browY;
+  const bw=120;
+  if(Math.abs(cur.brow)>.05||cur.browY<-8){
+    drawBrow(ex[0],by,bw,cur.brow,col,-1);
+    drawBrow(ex[1],by,bw,cur.brow,col,1);
+  }
+  // рот
+  if(talking) drawHeartMouth(400+lx*12,325+ly*8,cur.mw,Math.max(cur.curve,.6),60+mouthOpenNow*70,col,t);
+  else drawMouth(400+lx*12,335+ly*8,cur.mw,cur.curve,mouthOpenNow,col);
+
+  // индикатор "слушает"
+  if(faceName==='слушает'){
+    const p=(Math.sin(t*4)+1)/2;
+    g.strokeStyle='rgba(157,255,122,'+(.15+p*.35)+')';g.lineWidth=6;
+    rr(14,14,W-28,H-28,40);g.stroke();
+  }
+
+  // сон: всплывающие «Z z z»
+  if(faceName==='спит'){
+    g.save();g.fillStyle=col;g.shadowColor=col;g.shadowBlur=14;g.textAlign='center';
+    for(let i=0;i<3;i++){
+      const p=((t*.35)+i/3)%1;
+      g.globalAlpha=Math.sin(p*Math.PI);
+      g.font='bold '+(26+p*40)+'px sans-serif';
+      g.fillText('Z',620+p*90+Math.sin(t*2+i)*8,150-p*120);
+    }
+    g.restore();
+  }
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+// ----- управление -----
+const hint=document.getElementById('hint');
+hint.textContent='1 обычное  2 радость  3 грусть  4 злость  5 удивление  6 думает  7 сонная  8 слушает  9 подмигивает\nT говорит   A автодемо   F полный экран   H скрыть подсказку   Esc/Q выход';
+document.addEventListener('keydown',e=>{
+  const k=e.key.toLowerCase();
+  if(k>='1'&&k<='9'){demo=false;setFace(ORDER[+k-1]);}
+  else if(k==='t'||k==='т'){talking=!talking;}
+  else if(k==='a'||k==='ф'){demo=!demo;demoT=0;}
+  else if(k==='h'||k==='р'){document.body.classList.toggle('show');}
+  else if(k==='escape'||k==='q'||k==='й'){exitFace();}
+  else if(k==='f'||k==='а'){ if(!document.fullscreenElement) document.documentElement.requestFullscreen().catch(()=>{}); else document.exitFullscreen(); }
+});
+// ----- выход -----
+let mouseTimer=0;
+function showMouse(){
+  document.body.classList.add('mouse');
+  clearTimeout(mouseTimer);
+  mouseTimer=setTimeout(()=>document.body.classList.remove('mouse'),4000);
+}
+['mousemove','mousedown','touchstart'].forEach(ev=>document.addEventListener(ev,showMouse,{passive:true}));
+function exitFace(){
+  if(document.fullscreenElement) document.exitFullscreen().catch(()=>{});
+  window.close();                       // сработает, если браузер разрешает
+  setTimeout(()=>{                      // не закрылось -> показываем подсказку
+    document.getElementById('bye').classList.add('on');
+    document.body.classList.add('mouse');
+  },300);
+}
+// ✕ закрывает только по двойному нажатию (защита от случайного касания экрана)
+let exitArmed=0;
+document.getElementById('exit').addEventListener('click',e=>{
+  const b=e.currentTarget;
+  if(Date.now()-exitArmed<2500){exitFace();return;}
+  exitArmed=Date.now(); b.textContent='?'; b.style.borderColor=b.style.color='#ff5a4d';
+  setTimeout(()=>{b.textContent='✕'; b.style.borderColor=b.style.color='';},2500);
+});
+
+// ----- уснуть и выйти (команда «выключись» из Karen2.py) -----
+let sleeping=false;
+function goSleep(){
+  if(sleeping) return; sleeping=true;
+  demo=false; talking=false; setFace('спит');
+  setTimeout(()=>{ cv.style.transition='opacity 2s'; cv.style.opacity='0'; },3000);  // 3 с спит с «Zzz»
+  setTimeout(exitFace,5200);                                                           // затем гаснет и закрывается
+}
+window.goSleep=goSleep;
+
+function fromHash(){
+  const h=decodeURIComponent(location.hash.slice(1));
+  if(!h) return;
+  if(h==='talk'||h==='говорит'){talking=true;return;}
+  if(h==='demo'||h==='демо'){demo=true;return;}
+  setFace(h);
+}
+window.addEventListener('hashchange',fromHash);fromHash();
+
+// чтение «состояние.json» (когда страница открыта через http, а не file://)
+async function poll(){
+  try{
+    const r=await fetch('состояние.json?'+Date.now(),{cache:'no-store'});
+    if(r.ok){const s=await r.json(); if(s['выход']){goSleep();return;} if(s['лицо']&&s['лицо']!==faceName&&!demo) setFace(s['лицо']); if('говорит' in s) talking=!!s['говорит'];}
+  }catch(e){}
+  setTimeout(poll,300);
+}
+if(location.protocol.startsWith('http')) poll();
+</script>
+</body>
+</html>

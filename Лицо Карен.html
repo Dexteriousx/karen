@@ -1,0 +1,224 @@
+<!doctype html>
+<html lang="ru" translate="no">
+<head>
+<meta charset="utf-8">
+<meta name="google" content="notranslate">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Лицо Карен</title>
+<style>
+  html,body{margin:0;height:100%;background:#000;overflow:hidden;cursor:none}
+  canvas{display:block;width:100vw;height:100vh;object-fit:contain;background:#050608}
+  #hint{position:fixed;left:8px;bottom:6px;font:12px/1.3 sans-serif;color:#456;opacity:.0;transition:opacity .3s;pointer-events:none;white-space:pre}
+  body.show #hint{opacity:.9}
+  body.mouse{cursor:default}
+  #exit{position:fixed;top:14px;right:14px;width:64px;height:64px;border-radius:50%;
+        border:2px solid #39ff6a;background:rgba(5,6,8,.85);color:#39ff6a;font:bold 34px/1 sans-serif;
+        cursor:pointer;opacity:0;pointer-events:none;transition:opacity .3s;z-index:10}
+  body.mouse #exit{opacity:1;pointer-events:auto}
+  #bye{position:fixed;inset:0;display:none;align-items:center;justify-content:center;flex-direction:column;
+       background:#050608;color:#39ff6a;font:22px/1.5 sans-serif;text-align:center;z-index:20}
+  #bye.on{display:flex}
+</style>
+</head>
+<body>
+<canvas id="c" width="800" height="480"></canvas>
+<div id="hint"></div>
+<button id="exit" title="Выход (Esc)">✕</button>
+<div id="bye">Карен спит. Zzz…<br><span style="font-size:16px;opacity:.7">Закройте окно: Alt+F4 или Ctrl+W</span></div>
+<script>
+/* ===== Лицо Карен: голосовой визуализатор, экран 800x480 =====
+   Клавиши: 1 покой  2 слушает  3 говорит  4 думает   T говорит вкл/выкл
+            A автодемо   H подсказка   F полный экран   Esc/Q выход
+   Из программы: файл состояние.json рядом {"лицо":"слушает","говорит":true,"выход":false}
+   (нужен python3 -m http.server). Или адрес страницы с #слушает / #talk
+*/
+const cv=document.getElementById('c'), g=cv.getContext('2d');
+const W=800,H=480, CY=H/2, X0=24, X1=W-24;
+const COL='#39ff6a';
+
+// параметры движения для каждого режима
+//  amp  - высота обычных колебаний (px), peak - высота острых пиков,
+//  pk   - вероятность пика в точке, rate - как часто линия «прыгает» (с),
+//  jit  - мелкая дрожь (px), flat - насколько ровно по всей ширине (0 - только центр, 1 - везде)
+const MODES={
+  idle:   {amp:7,   peak:16,  pk:.03, rate:.16, jit:1.2, flat:.35},
+  think:  {amp:12,  peak:28,  pk:.05, rate:.11, jit:2,   flat:.45},
+  listen: {amp:38,  peak:95,  pk:.09, rate:.065,jit:4,   flat:.6},
+  speak:  {amp:85,  peak:190, pk:.2,  rate:.04, jit:8,   flat:.92},
+  sleep:  {amp:0,   peak:0,   pk:0,   rate:.3,  jit:0,   flat:.3},
+};
+const KEYS=['amp','peak','pk','rate','jit','flat'];
+const cur=Object.assign({},MODES.idle);
+let mode='idle', faceName='обычное', talking=false, demo=false, demoT=0;
+
+// несколько наложенных линий разного зелёного
+const LAYERS=[
+  {col:'#1fae4a', w:2.2, a:.55, s:1.15, M:52},
+  {col:'#4dff86', w:1.6, a:.6,  s:.8,   M:70},
+  {col:'#2fe06a', w:2.6, a:.7,  s:.95,  M:44},
+  {col:'#26c95a', w:1.4, a:.5,  s:.6,   M:90},
+  {col:COL,       w:4.5, a:1,   s:1,    M:58},   // главная линия - сверху
+];
+for(const L of LAYERS){ L.v=new Float32Array(L.M+1); L.t=new Float32Array(L.M+1); L.timer=Math.random()*.05; }
+
+const N=320;                       // точек на линии
+const jitBuf=new Float32Array(N+1);
+
+function envelope(u,flat){         // u: 0..1 по ширине; края прижаты к центру
+  const s=Math.sin(Math.PI*u);
+  return Math.pow(s, 1.6-1.4*flat);
+}
+function rnd(){return Math.random()*2-1}
+
+function newTargets(L,loud){
+  const amp=cur.amp*L.s*loud, peak=cur.peak*L.s*loud;
+  for(let i=0;i<=L.M;i++){
+    let v=rnd()*amp*(.25+.75*Math.random());
+    if(Math.random()<cur.pk) v=(Math.random()<.5?-1:1)*peak*(.55+.45*Math.random());   // острый пик
+    L.t[i]=v*envelope(i/L.M,cur.flat);
+  }
+}
+
+let last=performance.now();
+function frame(now){
+  const dt=Math.min(.05,(now-last)/1000); last=now;
+  const t=now/1000;
+
+  if(demo){ demoT-=dt; if(demoT<=0){ demoT=3; const seq=['idle','listen','speak','think']; setMode(seq[(seq.indexOf(mode)+1)%seq.length]); } }
+
+  // плавный переход между режимами
+  const target=MODES[mode], k=1-Math.pow(.004,dt);
+  for(const n of KEYS) cur[n]+= (target[n]-cur[n])*k;
+
+  // громкость «слогов» при речи: быстро меняется, но остаётся сильной
+  let loud=1;
+  if(mode==='speak'){
+
+    loud=.6+.4*Math.abs(Math.sin(t*6.7)*Math.sin(t*2.9+1.3)) + (Math.random()<.08?.3:0);
+  }else if(mode==='listen'){
+    loud=.75+.25*Math.abs(Math.sin(t*3.1));
+  }else if(mode==='idle'||mode==='think'){
+    loud=.8+.2*Math.sin(t*1.3);
+  }
+
+  g.globalCompositeOperation='source-over';
+  g.fillStyle='#050608'; g.fillRect(0,0,W,H);
+
+  // мелкая дрожь, общая для кадра
+  for(let i=0;i<=N;i++) jitBuf[i]=rnd()*cur.jit*envelope(i/N,cur.flat);
+
+  g.globalCompositeOperation='source-over';
+  g.lineCap='round'; g.lineJoin='miter'; g.miterLimit=4;
+  for(const L of LAYERS){
+    L.timer-=dt;
+    if(L.timer<=0){ newTargets(L,loud); L.timer=cur.rate*(.7+.6*Math.random()); }
+    // быстрое, но не мгновенное движение к новым высотам
+    const kk=1-Math.pow(1e-5, dt/Math.max(.03,cur.rate));
+    for(let i=0;i<=L.M;i++) L.v[i]+=(L.t[i]-L.v[i])*kk;
+
+    g.save();
+    g.globalAlpha=L.a;
+    g.strokeStyle=L.col; g.lineWidth=L.w;
+    g.shadowColor=L.col; g.shadowBlur=L===LAYERS[LAYERS.length-1]?26:14;
+    g.beginPath();
+    for(let i=0;i<=N;i++){
+      const u=i/N, p=u*L.M, j=Math.min(L.M-1,p|0), f=p-j;
+      const y=CY - (L.v[j]*(1-f)+L.v[j+1]*f) - jitBuf[i]*L.s*(.5+Math.random());
+      const x=X0+u*(X1-X0);
+      if(i===0) g.moveTo(x,y); else g.lineTo(x,y);
+    }
+    g.stroke();
+    g.restore();
+  }
+
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+function setMode(m){ if(MODES[m]) mode=m; }
+function applyState(face,talk){
+  faceName=face||faceName; talking=!!talk;
+  if(talking) setMode('speak');
+  else if(faceName==='слушает') setMode('listen');
+  else if(faceName==='думает') setMode('think');
+  else if(faceName==='спит') setMode('sleep');
+  else setMode('idle');
+}
+window.setFace=f=>applyState(f,talking); window.setTalking=v=>applyState(faceName,v);
+
+// ----- управление -----
+const hint=document.getElementById('hint');
+hint.textContent='1 покой  2 слушает  3 говорит  4 думает   T говорит вкл/выкл\nA автодемо   F полный экран   H скрыть подсказку   Esc/Q выход';
+document.addEventListener('keydown',e=>{
+  const k=e.key.toLowerCase();
+  if(k==='1'){demo=false;applyState('обычное',false);}
+  else if(k==='2'){demo=false;applyState('слушает',false);}
+  else if(k==='3'){demo=false;applyState(faceName,true);}
+  else if(k==='4'){demo=false;applyState('думает',false);}
+  else if(k==='t'||k==='е'){demo=false;applyState(faceName,!talking);}
+  else if(k==='a'||k==='ф'){demo=!demo;demoT=0;}
+  else if(k==='h'||k==='р'){document.body.classList.toggle('show');}
+  else if(k==='escape'||k==='q'||k==='й'){exitFace();}
+  else if(k==='f'||k==='а'){ if(!document.fullscreenElement) document.documentElement.requestFullscreen().catch(()=>{}); else document.exitFullscreen(); }
+});
+// ----- выход -----
+let mouseTimer=0;
+function showMouse(){
+  document.body.classList.add('mouse');
+  clearTimeout(mouseTimer);
+  mouseTimer=setTimeout(()=>document.body.classList.remove('mouse'),4000);
+}
+['mousemove','mousedown','touchstart'].forEach(ev=>document.addEventListener(ev,showMouse,{passive:true}));
+function exitFace(){
+  if(document.fullscreenElement) document.exitFullscreen().catch(()=>{});
+  window.close();
+  setTimeout(()=>{
+    document.getElementById('bye').classList.add('on');
+    document.body.classList.add('mouse');
+  },300);
+}
+// ✕ закрывает только по двойному нажатию (защита от случайного касания экрана)
+let exitArmed=0;
+document.getElementById('exit').addEventListener('click',e=>{
+  const b=e.currentTarget;
+  if(Date.now()-exitArmed<2500){exitFace();return;}
+  exitArmed=Date.now(); b.textContent='?'; b.style.borderColor=b.style.color='#ff5a4d';
+  setTimeout(()=>{b.textContent='✕'; b.style.borderColor=b.style.color='';},2500);
+});
+
+// ----- уснуть и выйти (команда «выключись» из Karen2.py) -----
+let sleeping=false;
+function goSleep(){
+  if(sleeping) return; sleeping=true;
+  demo=false; applyState('спит',false);                                             // линия затихает
+  setTimeout(()=>{ cv.style.transition='opacity 2s'; cv.style.opacity='0'; },3000);  // затем гаснет
+  setTimeout(exitFace,5200);                                                         // и закрывается
+}
+window.goSleep=goSleep;
+
+function fromHash(){
+  const h=decodeURIComponent(location.hash.slice(1));
+  if(!h) return;
+  if(h==='talk'||h==='говорит'){applyState(faceName,true);return;}
+  if(h==='listen'){applyState('слушает',false);return;}
+  if(h==='demo'||h==='демо'){demo=true;return;}
+  applyState(h,false);
+}
+window.addEventListener('hashchange',fromHash);fromHash();
+
+// чтение «состояние.json» (когда страница открыта через http, а не file://)
+async function poll(){
+  try{
+    const r=await fetch('состояние.json?'+Date.now(),{cache:'no-store'});
+    if(r.ok){
+      const s=await r.json();
+      if(s['выход']){goSleep();return;}
+      if(!demo) applyState(s['лицо']||faceName, !!s['говорит']);
+    }
+  }catch(e){}
+  setTimeout(poll,300);
+}
+if(location.protocol.startsWith('http')) poll();
+</script>
+</body>
+</html>
