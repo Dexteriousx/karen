@@ -199,17 +199,18 @@ async def robot_socket(ws: WebSocket):
 # ======================= Страницы =======================
 @app.get("/")
 def site():
-    return FileResponse(os.path.join(HERE, "site.html"))
+    return FileResponse(os.path.join(HERE, "site.html"), headers={"Cache-Control": "no-cache"})
 
 
 @app.get("/app")
 def control_app():
-    return FileResponse(os.path.join(HERE, "index.html"))
+    return FileResponse(os.path.join(HERE, "index.html"), headers={"Cache-Control": "no-cache"})
 
 
 @app.get("/face.js")
 def face_js():
-    return FileResponse(os.path.join(HERE, "face.js"), media_type="text/javascript")
+    return FileResponse(os.path.join(HERE, "face.js"), media_type="text/javascript",
+                        headers={"Cache-Control": "no-cache"})   # телефон всегда берёт свежую версию
 
 
 @app.get("/healthz", response_class=PlainTextResponse)

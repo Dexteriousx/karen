@@ -150,7 +150,7 @@
 </main>
 <div id="lock"><form id="lockForm"><h1>Карен</h1><input id="pw" type="password" placeholder="Пароль" autocomplete="current-password"><button>Войти</button><p id="lockErr"></p></form></div>
 
-<script src="/face.js"></script>
+<script src="/face.js?v=3"></script>
 <script>
 const $=id=>document.getElementById(id);
 const face=KarenFace($('c'));
@@ -270,11 +270,14 @@ $('mic').onclick=()=>{
 /* ---------- пульт ---------- */
 $('robotVoice').checked=store.get('karen-robot-voice')!=='0';
 $('robotVoice').onchange=e=>store.set('karen-robot-voice',e.target.checked?'1':'0');
+let faceTouched=0;
+const markFace=n=>document.querySelectorAll('#faces .chip').forEach(b=>b.classList.toggle('on',b.dataset.face===n));
 const FACE_BTNS=[['обычное','🙂'],['говорит','🗣️'],['грусть','😢'],['злость','😠'],['удивление','😮'],['думает','🤔'],['сонная','😴'],['слушает','👂'],['подмигивает','😉']];
 for(const [name,icon] of FACE_BTNS){
   const b=document.createElement('button');b.type='button';b.className='chip';b.dataset.face=name;b.textContent=icon+' '+name;
   b.onclick=()=>{const speak=name==='говорит';   // «говорит»: обычное лицо + волна голоса
     face.setFace(speak?'обычное':name);face.fakeTalk=speak;face.talking=speak;
+    faceTouched=Date.now();markFace(name);   // сразу зелёная, не ждём ответа робота
     api('/api/face',{face:name}).catch(e=>padError(e.message));};
   $('faces').append(b);
 }
@@ -371,7 +374,8 @@ async function poll(){
     $('padErr').textContent=!online?'Робот не в сети. На Raspberry Pi должен работать агент: ~/karen-robot-start.sh':(tel.motors===false?(tel.motor_error||'Колёса не подключены'):$('padErr').textContent);
     if(online&&tel.cpu_temp!=null){temps.push(tel.cpu_temp);if(temps.length>120)temps.shift();}
     if(online&&Date.now()-powerTouched>6000) $('karenPower').checked=!!tel.karen_voice;
-    document.querySelectorAll('#faces .chip').forEach(b=>b.classList.toggle('on',online&&b.dataset.face===tel.face));
+    const shown=tel.talking?'говорит':tel.face;   // когда робот говорит, горит кнопка «говорит»
+    if(Date.now()-faceTouched>3000) markFace(online?shown:null);
     // цифровой двойник: лицо на сайте повторяет лицо робота, пока мы сами не говорим
     $('mirror').textContent=online?'↔ как на экране робота':'';
     if(online&&!busy&&!phoneTalking&&!listening){face.setFace(tel.face||'обычное');face.fakeTalk=!!tel.talking;face.talking=!!tel.talking;}
