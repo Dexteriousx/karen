@@ -66,7 +66,7 @@ system_instruction = (
     "Сначала дай полезный ответ, потом, если уместно, короткая добрая шутка. "
     "Ты говоришь по-казахски, по-русски и по-английски. Отвечай на языке сообщения: на казахское - по-казахски, "
     "на русское - по-русски, на английское - по-английски (если собеседник сам не просит другой язык); "
-    "если язык непонятен - по-казахски. 1-3 коротких предложения. "
+    "если язык непонятен - по-казахски. Весь ответ, включая шутку, - на одном этом языке. 1-3 коротких предложения. "
     "По-казахски пиши грамотно, казахскими буквами (ә, ғ, қ, ң, ө, ұ, ү, һ, і). "
     "Твой ответ озвучивается голосом, поэтому: без смайликов, списков, звёздочек, заголовков, ссылок и "
     "названий сайтов; числа пиши так, чтобы их легко было прочитать вслух (например «плюс пять градусов», "
@@ -406,7 +406,48 @@ async def chat(body: ChatIn, request: Request):
     return {"text": text, "face": face}
 
 
+# Длинные предложения режем по запятым/двоеточиям/тире: голос коротких кусков готов в 2 раза быстрее
+# (137 символов ~3.9 с, 38 символов ~1.7 с), и Карен начинает говорить, не дожидаясь конца фразы.
 SENTENCE_END = re.compile(r"(?<=[.!?…])\s+")
+CLAUSE = re.compile(r"(?<=[,;:])\s+|\s+(?=[—–]\s)")
+MIN_PIECE, MAX_PIECE = 25, 70   # символов в куске озвучки
+
+
+def clause_pieces(sentence):
+    """Длинное предложение -> куски по 25-70 символов по знакам препинания; короткое - как есть."""
+    sentence = sentence.strip()
+    if len(sentence) <= MAX_PIECE:
+        return [sentence] if sentence else []
+    out, cur = [], ""
+    for p in CLAUSE.split(sentence):
+        cur = f"{cur} {p}".strip() if cur else p.strip()
+        if len(cur) >= MIN_PIECE:
+            out.append(cur)
+            cur = ""
+    if cur:
+        if out and len(cur) < MIN_PIECE:
+            out[-1] += " " + cur
+        else:
+            out.append(cur)
+    return out
+
+
+def speakable(buf, started):
+    """Из текста, который пишет Gemini, достаём то, что уже можно озвучить: (готовые куски, остаток).
+    Самое начало ответа отдаём по первой же запятой; дальше незаконченное предложение режем, если оно длинное."""
+    parts = SENTENCE_END.split(buf)
+    ready = [p for s in parts[:-1] for p in clause_pieces(s)]
+    rest = parts[-1]
+    while True:
+        first = not (started or ready)
+        if not first and len(rest) <= MAX_PIECE:
+            break
+        cut = next((m for m in CLAUSE.finditer(rest) if m.start() >= MIN_PIECE), None)
+        if not cut:
+            break
+        ready.append(rest[:cut.start()].strip())
+        rest = rest[cut.end():]
+    return ready, rest
 
 
 @app.post("/api/chat/stream")
@@ -442,6 +483,7 @@ async def chat_stream(body: ChatIn, request: Request):
         face, head_done, buf, spoken = "обычное", False, "", []
 
         async def emit(sentence):
+            sentence = re.sub(r"\[[^\]]{1,20}\]\s*", "", sentence)   # метка настроения не там, где надо - не читаем вслух
             sentence = re.sub(r"[*_#`]", "", sentence).strip()
             if not sentence:
                 return None
@@ -474,18 +516,18 @@ async def chat_stream(body: ChatIn, request: Request):
                     if not head_done:
                         continue
                     yield line(type="face", face=face)
-                parts = SENTENCE_END.split(buf)
-                for s in parts[:-1]:
+                ready, buf = speakable(buf, bool(spoken))
+                for s in ready:
                     out = await emit(s)
                     if out:
                         yield out
-                buf = parts[-1]
             if not head_done:
                 take_face_tag()
                 yield line(type="face", face=face)
-            out = await emit(buf)
-            if out:
-                yield out
+            for s in clause_pieces(buf):
+                out = await emit(s)
+                if out:
+                    yield out
         except Exception as e:
             print("Ошибка Gemini:", e)
             if not spoken:

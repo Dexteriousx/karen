@@ -81,7 +81,8 @@ system_instruction = (
     "Текущие дата и время приходят в начале каждого сообщения в квадратных скобках. "
     "Сначала дай полезный ответ, потом, если уместно, короткая добрая шутка. "
     "Ты говоришь по-казахски, по-русски и по-английски. Отвечай на том языке, который указан в начале сообщения "
-    "(«Язык ответа»), если собеседник сам не просит другой язык; 1-3 коротких предложения. "
+    "(«Язык ответа»), если собеседник сам не просит другой язык; весь ответ, включая шутку, - на одном этом языке; "
+    "1-3 коротких предложения. "
     "По-казахски пиши грамотно, казахскими буквами (ә, ғ, қ, ң, ө, ұ, ү, һ, і). "
     "Твой ответ озвучивается голосом, поэтому: без смайликов, списков, звёздочек, заголовков, ссылок и "
     "названий сайтов; числа пиши так, чтобы их легко было прочитать вслух (например «плюс пять градусов», "
@@ -212,9 +213,54 @@ def wait_until_spoken():
     audio_q.join()
 
 # ---------- Gemini: говорим по предложениям, пока она ещё пишет ----------
+# Длинные предложения режем по запятым/двоеточиям/тире: голос коротких кусков готов в 2 раза быстрее
+# (137 символов ~3.9 с, 38 символов ~1.7 с), и Карен начинает говорить, не дожидаясь конца фразы.
+SENTENCE_END = re.compile(r"(?<=[.!?…])\s+")
+CLAUSE = re.compile(r"(?<=[,;:])\s+|\s+(?=[—–]\s)")
+MIN_PIECE, MAX_PIECE = 25, 70   # символов в куске озвучки
+
+
+def clause_pieces(sentence):
+    """Длинное предложение -> куски по 25-70 символов по знакам препинания; короткое - как есть."""
+    sentence = sentence.strip()
+    if len(sentence) <= MAX_PIECE:
+        return [sentence] if sentence else []
+    out, cur = [], ""
+    for p in CLAUSE.split(sentence):
+        cur = f"{cur} {p}".strip() if cur else p.strip()
+        if len(cur) >= MIN_PIECE:
+            out.append(cur)
+            cur = ""
+    if cur:
+        if out and len(cur) < MIN_PIECE:
+            out[-1] += " " + cur
+        else:
+            out.append(cur)
+    return out
+
+
+def speakable(buf, started):
+    """Из текста, который пишет Gemini, достаём то, что уже можно озвучить: (готовые куски, остаток).
+    Самое начало ответа отдаём по первой же запятой; дальше незаконченное предложение режем, если оно длинное."""
+    parts = SENTENCE_END.split(buf)
+    ready = [p for s in parts[:-1] for p in clause_pieces(s)]
+    rest = parts[-1]
+    while True:
+        first = not (started or ready)
+        if not first and len(rest) <= MAX_PIECE:
+            break
+        cut = next((m for m in CLAUSE.finditer(rest) if m.start() >= MIN_PIECE), None)
+        if not cut:
+            break
+        ready.append(rest[:cut.start()].strip())
+        rest = rest[cut.end():]
+    return ready, rest
+
+
 def ask_and_speak(user_text):
     buffer = ""
     full = ""
+    started = False
     thinking.set()
     set_state("думает")
     try:
@@ -222,13 +268,14 @@ def ask_and_speak(user_text):
         for chunk in chat.send_message_stream(f"[Сейчас: {now}] [Язык ответа: {LANG_NAMES[LANG]}] {user_text}"):
             full += chunk.text or ""
             buffer += chunk.text or ""
-            parts = re.split(r"(?<=[.!?])\s+", buffer)
-            for sentence in parts[:-1]:
-                say(sentence)
-            buffer = parts[-1]
+            ready, buffer = speakable(buffer, started)
+            for piece in ready:
+                say(piece)
+                started = True
     finally:
         thinking.clear()
-    say(buffer)
+    for piece in clause_pieces(buffer):
+        say(piece)
     print(f"Карен: {full.strip()}")
 
 # ---------- Микрофон ----------
