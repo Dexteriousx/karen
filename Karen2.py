@@ -1,8 +1,37 @@
 import os, re, sys, json, array, time, datetime, signal, atexit, asyncio, tempfile, threading, queue, subprocess, audioop
+import socket
+import concurrent.futures as cf
 import edge_tts
 import speech_recognition as sr
 from google import genai
 from google.genai import types
+
+# ---------- Кэш DNS ----------
+# На хотспоте телефона поиск адреса сайта иногда висит 5 с. Запоминаем адреса: после первого раза
+# ответ мгновенный, а устаревший адрес обновляется в фоне, не задерживая Карен.
+_getaddrinfo = socket.getaddrinfo
+_dns = {}
+DNS_TTL = 300
+
+def _dns_refresh(key, args, kw):
+    try:
+        _dns[key] = (time.time(), _getaddrinfo(*args, **kw))
+    except OSError:
+        pass   # остаётся старый адрес
+
+def _cached_getaddrinfo(*args, **kw):
+    key = (args, tuple(sorted(kw.items())))
+    hit = _dns.get(key)
+    if hit:
+        if time.time() - hit[0] > DNS_TTL:
+            _dns[key] = (time.time(), hit[1])   # чтобы не запускать обновление много раз
+            threading.Thread(target=_dns_refresh, args=(key, args, kw), daemon=True).start()
+        return hit[1]
+    res = _getaddrinfo(*args, **kw)
+    _dns[key] = (time.time(), res)
+    return res
+
+socket.getaddrinfo = _cached_getaddrinfo
 
 # ---------- Настройки ----------
 MODEL = "gemini-3.5-flash-lite"   # быстрее, чем gemini-3.8-flash (~0.7 с против ~2 с); вернуть старую — поменяй здесь
@@ -136,24 +165,36 @@ def voice_levels(mp3, step_ms=20):
 def play_worker():
     while True:
         chunks = audio_q.get()
-        # фразу дослушиваем целиком (следующая тем временем уже качается), чтобы знать её громкость
-        parts = []
-        data = chunks.get()
-        while data is not None:
-            parts.append(data)
+        # Играем сразу, как пришёл первый кусок звука (~0.5 с быстрее, чем ждать всю фразу).
+        # Громкость для волны на лице досчитываем по ходу и обновляем.
+        parts, p, start, last_lv = [], None, 0, 0.0
+        try:
             data = chunks.get()
-        audio = b"".join(parts)
-        if audio:
-            try:
-                levels = voice_levels(audio)
-                p = subprocess.Popen(["ffplay", "-nodisp", "-autoexit", "-loglevel", "error", "-i", "pipe:0"]
-                                     + (["-af", VOICE_FX] if VOICE_FX else []),
-                                     stdin=subprocess.PIPE)
-                set_state("обычное", True, voice={"старт": int(time.time() * 1000) + VOICE_LAG_MS,
-                                                  "шаг": 20, "уровни": levels})
-                p.communicate(audio)
-            except Exception as e:
-                print("Ошибка воспроизведения:", e)
+            while data is not None:
+                parts.append(data)
+                if p is None:
+                    p = subprocess.Popen(["ffplay", "-nodisp", "-autoexit", "-loglevel", "error", "-i", "pipe:0"]
+                                         + (["-af", VOICE_FX] if VOICE_FX else []),
+                                         stdin=subprocess.PIPE)
+                    start = int(time.time() * 1000) + VOICE_LAG_MS
+                try:
+                    p.stdin.write(data)
+                    p.stdin.flush()
+                except (BrokenPipeError, OSError):
+                    pass
+                if time.time() - last_lv > 0.3:
+                    set_state("обычное", True, voice={"старт": start, "шаг": 20, "уровни": voice_levels(b"".join(parts))})
+                    last_lv = time.time()
+                data = chunks.get()
+            if p:
+                set_state("обычное", True, voice={"старт": start, "шаг": 20, "уровни": voice_levels(b"".join(parts))})
+                try:
+                    p.stdin.close()
+                except OSError:
+                    pass
+                p.wait()
+        except Exception as e:
+            print("Ошибка воспроизведения:", e)
         if audio_q.empty() and not shutting_down.is_set():
             set_state("думает" if thinking.is_set() else "обычное")
         audio_q.task_done()
@@ -231,25 +272,50 @@ TRANSCRIBE_PROMPT = ("Transcribe this speech exactly, in its original language a
                      "only noise, or the speech is unclear, reply exactly: none|")
 MIN_SPEECH_RMS = 150   # средняя громкость после усиления; тише - это не речь, Gemini не отправляем
 
+HEDGE_AFTER = 3.0   # если Gemini не ответил за столько секунд - параллельно спрашиваем Google
+_pool = cf.ThreadPoolExecutor(4)
+
+def _gemini_transcribe(wav):
+    r = client.models.generate_content(
+        model=MODEL, contents=[TRANSCRIBE_PROMPT, types.Part.from_bytes(data=wav, mime_type="audio/wav")],
+        config=types.GenerateContentConfig(temperature=0, thinking_config=types.ThinkingConfig(thinking_level="minimal"),
+                                           http_options=types.HttpOptions(timeout=10000)))   # меньше 10 с Gemini не принимает
+    lang, _, text = (r.text or "").strip().partition("|")
+    lang, text = lang.strip().lower(), text.strip()
+    if lang == "none" or not text:
+        raise sr.UnknownValueError()
+    if lang not in LANG_NAMES:
+        raise ValueError(f"непонятный ответ: {r.text!r}")
+    return lang, text
+
+def _google_transcribe(audio, lang):
+    return lang, recognizer.recognize_google(audio, language=GOOGLE_CODES[lang])
+
 def transcribe(audio):
-    """Речь -> (язык, текст). Gemini сам узнаёт язык (kk/ru/en); если он недоступен - Google на текущем языке."""
+    """Речь -> (язык, текст). Gemini сам узнаёт язык (kk/ru/en). Если он медлит или сломался -
+    берём Google на текущем языке (кто первый ответит)."""
     if audioop.rms(audio.get_raw_data(), audio.sample_width) < MIN_SPEECH_RMS:
         raise sr.UnknownValueError()   # тишина: иначе Gemini может «услышать» выдуманные слова
+    gem = _pool.submit(_gemini_transcribe, audio.get_wav_data())
     try:
-        r = client.models.generate_content(
-            model=MODEL, contents=[TRANSCRIBE_PROMPT, types.Part.from_bytes(data=audio.get_wav_data(), mime_type="audio/wav")],
-            config=types.GenerateContentConfig(temperature=0, thinking_config=types.ThinkingConfig(thinking_level="minimal")))
-        lang, _, text = (r.text or "").strip().partition("|")
-        lang, text = lang.strip().lower(), text.strip()
-        if lang == "none" or not text:
-            raise sr.UnknownValueError()
-        if lang in LANG_NAMES:
-            return lang, text
+        return gem.result(timeout=HEDGE_AFTER)
+    except cf.TimeoutError:
+        print("Gemini медлит, параллельно спрашиваю Google")
     except sr.UnknownValueError:
         raise
     except Exception as e:
         print("Gemini не распознал, пробую Google:", e)
-    return LANG, recognizer.recognize_google(audio, language=GOOGLE_CODES[LANG])
+        return _google_transcribe(audio, LANG)
+    goo = _pool.submit(_google_transcribe, audio, LANG)
+    for f in cf.as_completed([gem, goo]):
+        try:
+            return f.result()
+        except sr.UnknownValueError:
+            if f is gem:
+                raise   # Gemini уверен, что речи нет
+        except Exception as e:
+            print("Ошибка распознавания:", e)
+    raise sr.UnknownValueError()
 
 while True:
     try:
