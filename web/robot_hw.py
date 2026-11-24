@@ -2,7 +2,7 @@
 
 Используют: robot_agent.py (робот подключается к сайту на Render) и app.py с KAREN_ROBOT=1 (локальный пульт).
 """
-import os, re, json, time, array, glob, queue, asyncio, threading, subprocess
+import os, re, json, time, array, glob, queue, asyncio, threading, subprocess, concurrent.futures
 
 import edge_tts
 
@@ -169,32 +169,27 @@ def voice_levels(mp3, step_ms=20):
     return [round(min(1.0, v / top) ** 0.7, 2) for v in lv]
 
 
-_say_q = queue.Queue()    # фразы, которые надо озвучить (строго по порядку)
-_play_q = queue.Queue()   # готовый звук
+_synth_pool = concurrent.futures.ThreadPoolExecutor(3)   # несколько фраз качаются одновременно
+_play_q = queue.Queue()   # звук фраз (future) строго по порядку
 
 
-def _synth_worker():
-    """Пока звучит одна фраза, следующая уже скачивается."""
-    while True:
-        text = _say_q.get()
-
-        async def mp3():
-            data = b""
-            async for ch in edge_tts.Communicate(text, voice_for(text), rate=RATE, pitch=PITCH).stream():
-                if ch["type"] == "audio":
-                    data += ch["data"]
-            return data
-        try:
-            audio = asyncio.run(mp3())
-        except Exception as e:
-            print("Ошибка озвучки:", e)
-            audio = b""
-        _play_q.put(audio)
+def _synth(text):
+    async def mp3():
+        data = b""
+        async for ch in edge_tts.Communicate(text, voice_for(text), rate=RATE, pitch=PITCH).stream():
+            if ch["type"] == "audio":
+                data += ch["data"]
+        return data
+    try:
+        return asyncio.run(mp3())
+    except Exception as e:
+        print("Ошибка озвучки:", e)
+        return b""
 
 
 def _play_worker():
     while True:
-        audio = _play_q.get()
+        audio = _play_q.get().result()
         if audio:
             try:
                 levels = voice_levels(audio)
@@ -204,11 +199,10 @@ def _play_worker():
                                input=audio, timeout=120)
             except Exception as e:
                 print("Ошибка озвучки:", e)
-        if _play_q.empty() and _say_q.empty():
+        if _play_q.empty():
             set_face("обычное")
 
 
-threading.Thread(target=_synth_worker, daemon=True).start()
 threading.Thread(target=_play_worker, daemon=True).start()
 
 
@@ -216,7 +210,7 @@ def say(text: str, face: str = "обычное"):
     """Озвучить фразу через динамик робота (в фоне, по очереди)."""
     text = re.sub(r"[*_#`]", "", text).strip()
     if text:
-        _say_q.put(text)
+        _play_q.put(_synth_pool.submit(_synth, text))   # качаем сразу, играем по очереди
 
 
 # ---------- Голосовая Карен (Karen2.py: микрофон + лицо на весь экран) ----------
