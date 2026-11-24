@@ -24,7 +24,19 @@ from google.genai import types
 MODEL = os.environ.get("KAREN_MODEL", "gemini-3.5-flash-lite")
 VOICE = "ru-RU-SvetlanaNeural"
 VOICE_KK = "kk-KZ-AigulNeural"   # казахский голос (мужской: kk-KZ-DauletNeural)
+VOICE_EN = "en-US-JennyNeural"   # английский голос
 KK_LETTERS = re.compile(r"[әғқңөұүһіӘҒҚҢӨҰҮҺІ]")   # буквы, которых нет в русском
+LATIN = re.compile(r"[A-Za-z]")
+CYRILLIC = re.compile(r"[А-Яа-яЁё]")
+
+
+def voice_for(text):
+    """Казахские буквы -> казахский голос, латиница -> английский, иначе русский."""
+    if KK_LETTERS.search(text):
+        return VOICE_KK
+    if len(LATIN.findall(text)) > len(CYRILLIC.findall(text)):
+        return VOICE_EN
+    return VOICE
 PITCH = "+65Hz"
 RATE = "+5%"
 CITY = os.environ.get("KAREN_CITY", "Алматы")
@@ -52,8 +64,9 @@ system_instruction = (
     "а этот чат идёт через твой сайт. "
     "Текущие дата и время приходят в начале каждого сообщения в квадратных скобках. "
     "Сначала дай полезный ответ, потом, если уместно, короткая добрая шутка. "
-    "Ты говоришь по-казахски и по-русски. Отвечай на языке сообщения: на казахское - по-казахски, "
-    "на русское - по-русски; если язык непонятен - по-казахски. 1-3 коротких предложения. "
+    "Ты говоришь по-казахски, по-русски и по-английски. Отвечай на языке сообщения: на казахское - по-казахски, "
+    "на русское - по-русски, на английское - по-английски (если собеседник сам не просит другой язык); "
+    "если язык непонятен - по-казахски. 1-3 коротких предложения. "
     "По-казахски пиши грамотно, казахскими буквами (ә, ғ, қ, ң, ө, ұ, ү, һ, і). "
     "Твой ответ озвучивается голосом, поэтому: без смайликов, списков, звёздочек, заголовков, ссылок и "
     "названий сайтов; числа пиши так, чтобы их легко было прочитать вслух (например «плюс пять градусов», "
@@ -322,6 +335,11 @@ async def karen_power(body: KarenIn, request: Request):
 
 DRIVE_WORDS = [  # (слова, левое, правое, секунд, ответ)
     (("тоқта", "токта"), 0, 0, 0, "Тоқтадым."),
+    (("stop",), 0, 0, 0, "Stopped."),
+    (("go back", "move back", "backward"), -1, -1, 2.0, "Going back."),
+    (("turn left", "go left"), -1, 1, 0.6, "Turning left."),
+    (("turn right", "go right"), 1, -1, 0.6, "Turning right."),
+    (("go forward", "move forward", "go ahead", "drive"), 1, 1, 2.0, "Going forward."),
     (("артқа",), -1, -1, 2.0, "Артқа жүремін."),
     (("солға",), -1, 1, 0.6, "Солға бұрыламын."),
     (("оңға",), 1, -1, 0.6, "Оңға бұрыламын."),
@@ -391,7 +409,7 @@ async def chat(body: ChatIn, request: Request):
 @app.post("/api/say")
 async def say(body: SayIn, request: Request):
     check_auth(request)
-    voice = VOICE_KK if KK_LETTERS.search(body.text) else VOICE
+    voice = voice_for(body.text)
     comm = edge_tts.Communicate(body.text, voice, rate=RATE, pitch=PITCH)
 
     async def audio():

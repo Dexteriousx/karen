@@ -8,7 +8,19 @@ import edge_tts
 
 VOICE = "ru-RU-SvetlanaNeural"
 VOICE_KK = "kk-KZ-AigulNeural"   # казахский голос
+VOICE_EN = "en-US-JennyNeural"   # английский голос
 KK_LETTERS = re.compile(r"[әғқңөұүһіӘҒҚҢӨҰҮҺІ]")
+LATIN = re.compile(r"[A-Za-z]")
+CYRILLIC = re.compile(r"[А-Яа-яЁё]")
+
+
+def voice_for(text):
+    """Казахские буквы -> казахский голос, латиница -> английский, иначе русский."""
+    if KK_LETTERS.search(text):
+        return VOICE_KK
+    if len(LATIN.findall(text)) > len(CYRILLIC.findall(text)):
+        return VOICE_EN
+    return VOICE
 PITCH = "+65Hz"
 RATE = "+5%"
 VOICE_FX = ("highpass=f=170,lowpass=f=5200,aecho=0.85:0.6:11:0.22,"
@@ -81,6 +93,11 @@ if left:
 
 DRIVE_WORDS = [  # (слова, левое, правое, секунд, ответ)
     (("тоқта", "токта"), 0, 0, 0, "Тоқтадым."),
+    (("stop",), 0, 0, 0, "Stopped."),
+    (("go back", "move back", "backward"), -1, -1, 2.0, "Going back."),
+    (("turn left", "go left"), -1, 1, 0.6, "Turning left."),
+    (("turn right", "go right"), 1, -1, 0.6, "Turning right."),
+    (("go forward", "move forward", "go ahead", "drive"), 1, 1, 2.0, "Going forward."),
     (("артқа",), -1, -1, 2.0, "Артқа жүремін."),
     (("солға",), -1, 1, 0.6, "Солға бұрыламын."),
     (("оңға",), 1, -1, 0.6, "Оңға бұрыламын."),
@@ -165,7 +182,7 @@ def say(text: str, face: str = "обычное"):
         with _speak_lock:
             async def mp3():
                 data = b""
-                voice = VOICE_KK if KK_LETTERS.search(text) else VOICE
+                voice = voice_for(text)
                 async for ch in edge_tts.Communicate(text, voice, rate=RATE, pitch=PITCH).stream():
                     if ch["type"] == "audio":
                         data += ch["data"]

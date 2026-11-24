@@ -55,6 +55,7 @@
   .btn{flex:none;width:46px;height:46px;border-radius:50%;display:grid;place-items:center;cursor:pointer;background:var(--panel);color:var(--text);border:1px solid var(--line)}
   .btn svg{width:22px;height:22px}
   #mic{background:var(--acc);color:#04210e;border:0}
+  #lang{font-size:12px;font-weight:700;letter-spacing:.5px}
   #mic.on{background:var(--err);color:#fff;animation:pulse 1s infinite}
   @keyframes pulse{50%{box-shadow:0 0 0 8px rgba(255,90,77,.25)}}
   #mute.off{color:var(--err)}
@@ -113,12 +114,13 @@
     </nav>
 
     <div class="tab" id="tab-chat">
-      <div class="scroll"><div id="log"><div id="empty">Нажми на микрофон и скажи что-нибудь<br>или напиши сообщение.<br><br>Команды роботу: «вперёд», «назад», «налево», «направо», «стоп».</div></div></div>
+      <div class="scroll"><div id="log"><div id="empty">Нажми на микрофон и скажи что-нибудь<br>или напиши сообщение.<br><br>Команды роботу: «вперёд», «назад», «налево», «направо», «стоп».<br>Қазақша: «алға», «артқа», «солға», «оңға», «тоқта».<br>English: “go forward”, “go back”, “turn left”, “turn right”, “stop”.<br><br>Кнопка ҚАЗ / РУС / ENG рядом с микрофоном выбирает язык речи.</div></div></div>
       <form class="bar" id="bar" autocomplete="off">
         <button type="button" class="btn" id="mute" title="Звук на телефоне вкл/выкл" aria-label="Звук">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4V5z"/><path id="waveIcon" d="M15.5 8.5a5 5 0 0 1 0 7M19 5a10 10 0 0 1 0 14"/></svg>
         </button>
         <input id="text" class="field" placeholder="Сообщение Карен…" enterkeyhint="send">
+        <button type="button" class="btn" id="lang" title="Язык микрофона / Тіл / Language" aria-label="Язык микрофона">ҚАЗ</button>
         <button type="button" class="btn" id="mic" title="Говорить" aria-label="Говорить">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0 0 14 0M12 17v5"/></svg>
         </button>
@@ -253,12 +255,17 @@ paintMute();
 /* ---------- микрофон телефона ---------- */
 const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
 let rec=null;
+const MIC_LANGS=[['kk-KZ','ҚАЗ'],['ru-RU','РУС'],['en-US','ENG']];
+let micLang=Math.max(0,MIC_LANGS.findIndex(l=>l[0]===store.get('karen-mic-lang')));
+const paintLang=()=>{$('lang').textContent=MIC_LANGS[micLang][1];};
+$('lang').onclick=()=>{micLang=(micLang+1)%MIC_LANGS.length;store.set('karen-mic-lang',MIC_LANGS[micLang][0]);paintLang();};
+paintLang();
 $('mic').onclick=()=>{
   if(!SR){addMsg('karen','Этот браузер не умеет распознавать речь. Открой в Chrome или Safari, или пиши текстом.',true);return;}
   unlockAudio();
   if(listening){rec.stop();return;}
   stopSpeaking();
-  rec=new SR(); rec.lang='kk-KZ'; rec.interimResults=true;
+  rec=new SR(); rec.lang=MIC_LANGS[micLang][0]; rec.interimResults=true;
   let finalText='';
   rec.onstart=()=>{listening=true;$('mic').classList.add('on');face.setFace('слушает');status('Слушаю…');};
   rec.onresult=e=>{let interim='';finalText='';for(const r of e.results){if(r.isFinal)finalText+=r[0].transcript;else interim+=r[0].transcript;}input.value=finalText+interim;};
