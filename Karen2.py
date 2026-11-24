@@ -62,7 +62,7 @@ system_instruction = (
 config = types.GenerateContentConfig(
     system_instruction=system_instruction,
     max_output_tokens=500,
-    thinking_config=types.ThinkingConfig(thinking_level="low"),
+    thinking_config=types.ThinkingConfig(thinking_level="minimal"),   # было "low": первая фраза на 0.1-0.25 с быстрее
     tools=[types.Tool(google_search=types.GoogleSearch())],   # поиск Google: погода, новости, курсы...
 )
 chat = client.chats.create(model=MODEL, config=config)
@@ -197,8 +197,9 @@ _names = sr.Microphone.list_microphone_names()
 MIC_INDEX = _names.index("karenmic") if "karenmic" in _names else None
 print("Микрофон:", _names[MIC_INDEX] if MIC_INDEX is not None else "по умолчанию")
 recognizer = sr.Recognizer()
-recognizer.pause_threshold = 0.5         # было 0.7: столько тишины ждём, чтобы понять, что ты договорил
-recognizer.non_speaking_duration = 0.4   # не больше pause_threshold
+recognizer.pause_threshold = 0.4         # было 0.5: столько тишины ждём, чтобы понять, что ты договорил
+recognizer.non_speaking_duration = 0.3   # не больше pause_threshold
+SEND_RATE = 16000   # микрофон пишет 48 кГц; для распознавания хватает 16 кГц - файл в 3 раза меньше, ответ ~1 с быстрее
 recognizer.dynamic_energy_threshold = False
 recognizer.energy_threshold = 60   # тишина ~16-45, речь ~85-200 (до усиления)
 
@@ -259,14 +260,16 @@ while True:
 
         set_state("обычное")
         print("Распознаю...")
-        audio = sr.AudioData(audioop.mul(audio.get_raw_data(), audio.sample_width, MIC_GAIN),
-                             audio.sample_rate, audio.sample_width)
+        t_heard = time.time()
+        audio = sr.AudioData(audioop.mul(audio.get_raw_data(convert_rate=SEND_RATE), audio.sample_width, MIC_GAIN),
+                             SEND_RATE, audio.sample_width)
         raw = audio.get_raw_data()
         print(f"(звук: {len(raw)/audio.sample_rate/audio.sample_width:.1f} с, пик {audioop.max(raw, audio.sample_width)}, "
               f"средний {audioop.rms(raw, audio.sample_width)})")
         with open(os.path.join(tempfile.gettempdir(), "karen_last.wav"), "wb") as f:
             f.write(audio.get_wav_data())
         LANG, user_text = transcribe(audio)
+        print(f"(распознано за {time.time() - t_heard:.1f} с)")
         print(f"Вы ({LANG}): {user_text}")
 
         low = user_text.lower().strip(" .!?,")
