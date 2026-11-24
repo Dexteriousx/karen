@@ -270,10 +270,12 @@ $('mic').onclick=()=>{
 /* ---------- пульт ---------- */
 $('robotVoice').checked=store.get('karen-robot-voice')!=='0';
 $('robotVoice').onchange=e=>store.set('karen-robot-voice',e.target.checked?'1':'0');
-const FACE_BTNS=[['обычное','🙂'],['грусть','😢'],['злость','😠'],['удивление','😮'],['думает','🤔'],['сонная','😴'],['слушает','👂'],['подмигивает','😉']];
+const FACE_BTNS=[['обычное','🙂'],['говорит','🗣️'],['грусть','😢'],['злость','😠'],['удивление','😮'],['думает','🤔'],['сонная','😴'],['слушает','👂'],['подмигивает','😉']];
 for(const [name,icon] of FACE_BTNS){
   const b=document.createElement('button');b.type='button';b.className='chip';b.dataset.face=name;b.textContent=icon+' '+name;
-  b.onclick=()=>{face.setFace(name);api('/api/face',{face:name}).catch(e=>padError(e.message));};
+  b.onclick=()=>{const speak=name==='говорит';   // «говорит»: обычное лицо + волна голоса
+    face.setFace(speak?'обычное':name);face.fakeTalk=speak;face.talking=speak;
+    api('/api/face',{face:name}).catch(e=>padError(e.message));};
   $('faces').append(b);
 }
 $('sayForm').addEventListener('submit',e=>{e.preventDefault();const t=$('sayText').value.trim();if(!t)return;api('/api/robot-say',{text:t}).then(()=>$('sayText').value='').catch(e=>padError(e.message));});

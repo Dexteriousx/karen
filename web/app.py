@@ -292,7 +292,7 @@ async def stop(request: Request):
 @app.post("/api/face")
 async def face(body: FaceIn, request: Request):
     check_auth(request)
-    if body.face not in FACES:
+    if body.face not in FACES and body.face != "говорит":   # «говорит» = обычное лицо + волна
         raise HTTPException(400, "Нет такого лица")
     await robot.send({"type": "face", "face": body.face})
     add_event("cmd", f"Лицо: {body.face}")
