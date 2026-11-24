@@ -1,10 +1,9 @@
 /* Лицо Карен (из «Лицо Карен.html») для сайта.
-   const f = KarenFace(canvas);  f.setFace('радость');  f.talking = true;  f.level = 0..1 (громкость голоса) */
+   const f = KarenFace(canvas);  f.setFace('грусть');  f.talking = true;  f.level = 0..1 (громкость голоса) */
 window.KarenFace = function (cv) {
   const g = cv.getContext('2d'), W = 800, H = 480;
   const FACES = {
     'обычное':   {open:1,   brow:0,   browY:0,   curve:.35, mopen:0,   mw:70,  cheek:0, sz:1,   lx:0,  ly:0,   col:'#5ef2ff', wink:0},
-    'радость':   {open:1,   brow:-.1, browY:-6,  curve:2.3, mopen:.8,  mw:200, cheek:.65, sz:1,   lx:0,  ly:0,   col:'#39ff6a', wink:0},
     'грусть':    {open:.75, brow:-1,  browY:6,   curve:-.9, mopen:0,   mw:60,  cheek:0, sz:1,   lx:0,  ly:.6,  col:'#7aa8ff', wink:0},
     'злость':    {open:.65, brow:1,   browY:10,  curve:-.5, mopen:0,   mw:85,  cheek:0, sz:1,   lx:0,  ly:0,   col:'#ff5a4d', wink:0},
     'удивление': {open:1.25,brow:-.2, browY:-22, curve:0,   mopen:1,   mw:38,  cheek:0, sz:1.1, lx:0,  ly:0,   col:'#ffffff', wink:0},
@@ -32,8 +31,8 @@ window.KarenFace = function (cv) {
     g.save();g.strokeStyle=col;g.lineWidth=12;g.lineCap='round';g.shadowColor=col;g.shadowBlur=18;
     g.beginPath();g.moveTo(cx+inner*(w/2),cy+dy);g.lineTo(cx-inner*(w/2),cy-dy);g.stroke();g.restore();
   }
-  function waves(col,amp,t,alpha){
-    const cy=H/2,N=200, ws=[[1.6,2.2,0,1,8,1],[2.3,-2.9,1.7,.75,5,.65],[3.1,3.6,3.1,.55,4,.45],[1.1,-1.5,4.4,.85,3,.35]];
+  function waves(col,amp,t,alpha,cy){   // одна линия голоса под лицом
+    const N=200, ws=[[1.6,2.2,0,1,8,1]];
     g.save();g.strokeStyle=col;g.lineCap='round';g.lineJoin='round';g.shadowColor=col;g.shadowBlur=24;
     for(const [f,s,ph,a,lw,op] of ws){
       g.globalAlpha=alpha*op;g.lineWidth=lw;g.beginPath();
@@ -56,8 +55,9 @@ window.KarenFace = function (cv) {
   function frame(now){
     const dt=Math.min(.05,(now-last)/1000);last=now;
     const k=1-Math.pow(.0009,dt);
-    for(const n of NUM) cur[n]=lerp(cur[n],target[n],k);
-    const tc=hex(target.col); for(let i=0;i<3;i++) colCur[i]=lerp(colCur[i],tc[i],k);
+    const tgt=api.talking?FACES['обычное']:target;   // во время речи лицо всегда обычное
+    for(const n of NUM) cur[n]=lerp(cur[n],tgt[n],k);
+    const tc=hex(tgt.col); for(let i=0;i<3;i++) colCur[i]=lerp(colCur[i],tc[i],k);
     const col='rgb('+colCur.map(v=>v|0).join(',')+')';
     nextBlink-=dt;
     if(nextBlink<=0&&blink===0){blink=.0001;nextBlink=2+Math.random()*3.5;}
@@ -73,8 +73,8 @@ window.KarenFace = function (cv) {
     mouthOpenNow=lerp(mouthOpenNow,mo,1-Math.pow(.00001,dt));
     g.fillStyle='#050608';g.fillRect(0,0,W,H);
     talkMix=lerp(talkMix,api.talking?1:0,1-Math.pow(.002,dt));
-    if(talkMix>.01) waves(col,40+mouthOpenNow*150,t,talkMix);
-    g.save();g.globalAlpha=Math.max(0,1-talkMix*1.1);
+    if(talkMix>.01) waves(col,3+Math.min(1,mouthOpenNow)*50,t,talkMix,425);
+    g.save();
     const sz=cur.sz, ew=130*sz, eh=150*sz*cur.open*bl, ex=[255+lx*22,545+lx*22], ey=185+ly*18;
     eye(ex[0],ey,ew,eh,col,cur.cheek);
     eye(ex[1],ey,ew,eh*(1-cur.wink*.93),col,cur.cheek*(1-cur.wink));

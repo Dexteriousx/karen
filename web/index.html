@@ -206,7 +206,7 @@ async function send(text){
     const viaRobot=robotVoice();
     const j=await (await api('/api/chat',{message:text,history:history.slice(-20),robot_voice:viaRobot})).json();
     if(!j.drove) history.push({role:'user',text},{role:'model',text:j.text});
-    addMsg('karen',j.text); face.setFace(j.face||'радость'); status(viaRobot?'Говорит робот…':'');
+    addMsg('karen',j.text); face.setFace(j.face||'обычное'); status(viaRobot?'Говорит робот…':'');
     if(!viaRobot) await speak(j.text);
   }catch(e){
     if(e.message!=='auth') addMsg('karen',e.message==='Failed to fetch'?'Нет связи с сервером.':e.message,true);
@@ -270,7 +270,7 @@ $('mic').onclick=()=>{
 /* ---------- пульт ---------- */
 $('robotVoice').checked=store.get('karen-robot-voice')!=='0';
 $('robotVoice').onchange=e=>store.set('karen-robot-voice',e.target.checked?'1':'0');
-const FACE_BTNS=[['обычное','🙂'],['радость','😄'],['грусть','😢'],['злость','😠'],['удивление','😮'],['думает','🤔'],['сонная','😴'],['слушает','👂'],['подмигивает','😉']];
+const FACE_BTNS=[['обычное','🙂'],['грусть','😢'],['злость','😠'],['удивление','😮'],['думает','🤔'],['сонная','😴'],['слушает','👂'],['подмигивает','😉']];
 for(const [name,icon] of FACE_BTNS){
   const b=document.createElement('button');b.type='button';b.className='chip';b.dataset.face=name;b.textContent=icon+' '+name;
   b.onclick=()=>{face.setFace(name);api('/api/face',{face:name}).catch(e=>padError(e.message));};

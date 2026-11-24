@@ -30,7 +30,7 @@ async def handle(ws, msg):
         elif t == "face":
             hw.set_face(str(msg.get("face", "обычное")))
         elif t == "say":
-            hw.say(str(msg.get("text", ""))[:2000], str(msg.get("face", "радость")))
+            hw.say(str(msg.get("text", ""))[:2000], str(msg.get("face", "обычное")))
         elif t == "karen":
             if msg.get("on"):
                 hw.karen_start()

@@ -94,7 +94,7 @@
   <div class="grid">
     <div class="card"><div class="ic">🎤</div><h3>Слушает и говорит</h3><p>Микрофон INMP441 и распознавание речи. Отвечает своим «компьютерным» голосом через динамик.</p></div>
     <div class="card"><div class="ic">🧠</div><h3>Отвечает на любые вопросы</h3><p>Мозг — Google Gemini с поиском: погода, новости, курсы валют, факты. С добрым юмором.</p></div>
-    <div class="card"><div class="ic">😄</div><h3>Эмоции на экране</h3><p>9 выражений лица: радость, грусть, удивление, «думает», «слушает»… Во время речи — звуковые волны.</p></div>
+    <div class="card"><div class="ic">😄</div><h3>Эмоции на экране</h3><p>8 выражений лица: грусть, удивление, «думает», «слушает»… Во время речи — обычное лицо и волна голоса под ним.</p></div>
     <div class="card"><div class="ic">🛞</div><h3>Ездит</h3><p>Два мотора через драйвер L298N. Кнопками на сайте или голосом: «вперёд», «назад», «налево», «стоп».</p></div>
     <div class="card"><div class="ic">🌐</div><h3>Управление через интернет</h3><p>Робот сам подключается к сайту, поэтому работает за любым Wi‑Fi или мобильным хотспотом.</p></div>
     <div class="card"><div class="ic">📈</div><h3>Датчики онлайн</h3><p>Температура процессора, загрузка, память, Wi‑Fi, питание и журнал событий — в реальном времени.</p></div>
@@ -221,7 +221,7 @@
 const face=KarenFace(document.getElementById('face'));
 const $=id=>document.getElementById(id);
 let robotFace=null, demoT=0;
-const DEMO=['радость','подмигивает','удивление','думает','обычное','слушает'];
+const DEMO=['подмигивает','удивление','думает','обычное','слушает'];
 setInterval(()=>{ if(robotFace) return; face.setFace(DEMO[demoT++%DEMO.length]); face.fakeTalk=face.talking=(demoT%4===0); },2600);
 const up=s=>{if(s==null)return '—';const d=Math.floor(s/86400),h=Math.floor(s%86400/3600),m=Math.floor(s%3600/60);return (d?d+' д ':'')+(h?h+' ч ':'')+m+' мин';};
 async function live(){

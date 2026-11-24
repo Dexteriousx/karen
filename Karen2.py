@@ -1,4 +1,4 @@
-import os, re, sys, json, time, datetime, signal, atexit, asyncio, tempfile, threading, queue, subprocess, audioop
+import os, re, sys, json, array, time, datetime, signal, atexit, asyncio, tempfile, threading, queue, subprocess, audioop
 import edge_tts
 import speech_recognition as sr
 from google import genai
@@ -52,12 +52,15 @@ STATE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "сост�
 _state_lock = threading.Lock()
 thinking = threading.Event()   # True, пока ждём ответ Gemini
 
-def set_state(face, talking=False, exit=False):
+def set_state(face, talking=False, exit=False, voice=None):
+    state = {"лицо": face, "говорит": talking, "выход": exit}
+    if voice:
+        state["голос"] = voice   # громкость по времени: волна повторяет голос
     with _state_lock:
         tmp = STATE_FILE + ".tmp"
         try:
             with open(tmp, "w", encoding="utf-8") as f:
-                json.dump({"лицо": face, "говорит": talking, "выход": exit}, f, ensure_ascii=False)
+                json.dump(state, f, ensure_ascii=False)
             os.replace(tmp, STATE_FILE)   # атомарно: страница не прочтёт полфайла
         except OSError as e:
             print("Ошибка записи состояния:", e)
@@ -89,27 +92,47 @@ def synth_worker():
         chunks.put(None)
         text_q.task_done()
 
+
+VOICE_LAG_MS = 150   # примерная задержка запуска ffplay; если волна опережает голос - увеличить
+
+def voice_levels(mp3, step_ms=20):
+    """Громкость голоса каждые step_ms (0..1) - по ней лицо рисует волну во время речи."""
+    try:
+        pcm = subprocess.run(["ffmpeg", "-v", "error", "-i", "pipe:0", "-f", "s16le", "-ac", "1", "-ar", "8000", "pipe:1"],
+                             input=mp3, capture_output=True, timeout=20).stdout
+    except Exception as e:
+        print("Ошибка разбора громкости:", e)
+        return []
+    a = array.array("h")
+    a.frombytes(pcm[:len(pcm) // 2 * 2])
+    n = 8 * step_ms
+    lv = [(sum(x * x for x in a[i:i + n]) / n) ** 0.5 for i in range(0, len(a), n)]
+    top = max(lv, default=0)
+    if top < 1:
+        return []
+    return [round(min(1.0, v / top) ** 0.7, 2) for v in lv]
+
 def play_worker():
     while True:
         chunks = audio_q.get()
-        first = chunks.get()
-        if first is not None:
-            data = first
+        # фразу дослушиваем целиком (следующая тем временем уже качается), чтобы знать её громкость
+        parts = []
+        data = chunks.get()
+        while data is not None:
+            parts.append(data)
+            data = chunks.get()
+        audio = b"".join(parts)
+        if audio:
             try:
-                set_state("радость", True)
+                levels = voice_levels(audio)
                 p = subprocess.Popen(["ffplay", "-nodisp", "-autoexit", "-loglevel", "error", "-i", "pipe:0"]
                                      + (["-af", VOICE_FX] if VOICE_FX else []),
                                      stdin=subprocess.PIPE)
-                while data is not None:
-                    p.stdin.write(data)
-                    p.stdin.flush()
-                    data = chunks.get()
-                p.stdin.close()
-                p.wait()
+                set_state("обычное", True, voice={"старт": int(time.time() * 1000) + VOICE_LAG_MS,
+                                                  "шаг": 20, "уровни": levels})
+                p.communicate(audio)
             except Exception as e:
                 print("Ошибка воспроизведения:", e)
-                while data is not None:   # дочитать остаток, чтобы не зависнуть
-                    data = chunks.get()
         if audio_q.empty() and not shutting_down.is_set():
             set_state("думает" if thinking.is_set() else "обычное")
         audio_q.task_done()

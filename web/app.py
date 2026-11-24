@@ -55,7 +55,7 @@ system_instruction = (
     "названий сайтов; числа пиши так, чтобы их легко было прочитать вслух (например «плюс пять градусов», "
     "а не «+5 °C»; без диапазонов через многоточие). "
     "В самом начале ответа поставь одну метку настроения в квадратных скобках: "
-    "[радость], [грусть], [удивление], [думает], [подмигивает] или [обычное]."
+    "[грусть], [удивление], [думает], [подмигивает] или [обычное]."
 )
 
 config = types.GenerateContentConfig(
@@ -65,7 +65,7 @@ config = types.GenerateContentConfig(
     tools=[types.Tool(google_search=types.GoogleSearch())],
 )
 
-FACES = {"обычное", "радость", "грусть", "злость", "удивление", "думает", "сонная", "слушает", "подмигивает"}
+FACES = {"обычное", "грусть", "злость", "удивление", "думает", "сонная", "слушает", "подмигивает"}
 
 app = FastAPI(title="Карен")
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -146,7 +146,7 @@ class LocalRobot:
             elif t == "face":
                 hw.set_face(msg["face"])
             elif t == "say":
-                hw.say(msg["text"], msg.get("face", "радость"))
+                hw.say(msg["text"], msg.get("face", "обычное"))
             elif t == "karen":
                 hw.karen_start() if msg["on"] else hw.karen_stop()
         except RuntimeError as e:
@@ -239,7 +239,7 @@ class ChatIn(BaseModel):
 
 class SayIn(BaseModel):
     text: str = Field(min_length=1, max_length=2000)
-    face: str = Field(default="радость", max_length=20)
+    face: str = Field(default="обычное", max_length=20)
 
 
 class DriveIn(BaseModel):
@@ -302,7 +302,7 @@ async def face(body: FaceIn, request: Request):
 @app.post("/api/robot-say")
 async def robot_say(body: SayIn, request: Request):
     check_auth(request)
-    await robot.send({"type": "say", "text": body.text, "face": body.face if body.face in FACES else "радость"})
+    await robot.send({"type": "say", "text": body.text, "face": body.face if body.face in FACES else "обычное"})
     add_event("cmd", f"Сказать через робота: {body.text}")
     return {"ok": True}
 
@@ -350,8 +350,8 @@ async def chat(body: ChatIn, request: Request):
             answer = e.detail
         add_event("chat_karen", answer)
         if body.robot_voice:
-            await robot.send({"type": "say", "text": answer, "face": "радость"})
-        return {"text": answer, "face": "радость", "drove": True}
+            await robot.send({"type": "say", "text": answer, "face": "обычное"})
+        return {"text": answer, "face": "обычное", "drove": True}
 
     now = datetime.datetime.now(TZ).strftime("%A, %d.%m.%Y, %H:%M")
     contents = [types.Content(role=t.role, parts=[types.Part(text=t.text)]) for t in body.history[-20:]]
@@ -362,7 +362,7 @@ async def chat(body: ChatIn, request: Request):
         print("Ошибка Gemini:", e)
         raise HTTPException(502, "Карен не смогла связаться с мозгом. Попробуй ещё раз.")
     text = (resp.text or "").strip()
-    face = "радость"
+    face = "обычное"
     m = re.match(r"^\s*\[([^\]]+)\]\s*", text)
     if m:
         if m.group(1).strip().lower() in FACES:

@@ -2,7 +2,7 @@
 
 Используют: robot_agent.py (робот подключается к сайту на Render) и app.py с KAREN_ROBOT=1 (локальный пульт).
 """
-import os, re, json, time, glob, asyncio, threading, subprocess
+import os, re, json, time, array, glob, asyncio, threading, subprocess
 
 import edge_tts
 
@@ -16,7 +16,7 @@ HOME = os.path.expanduser("~")
 STATE_FILE = os.environ.get("KAREN_STATE_FILE", os.path.join(HOME, "Жүктемелер", "состояние.json"))
 KAREN_START = os.path.join(HOME, "karen-start.sh")
 KAREN_LOG = os.path.join(HOME, ".cache", "karen-logs", "karen.log")
-FACES = {"обычное", "радость", "грусть", "злость", "удивление", "думает", "сонная", "слушает", "подмигивает"}
+FACES = {"обычное", "грусть", "злость", "удивление", "думает", "сонная", "слушает", "подмигивает"}
 DEADMAN = 0.7   # сек без команды «ехать» -> стоп (отпустили кнопку, пропала связь)
 
 # ---------- Колёса (драйвер L298N, пины как в kr.py) ----------
@@ -98,13 +98,16 @@ def drive_command(text: str):
 
 
 # ---------- Лицо на экране робота (читает «Лицо Карен.html») ----------
-def set_face(face: str, talking: bool = False):
+def set_face(face: str, talking: bool = False, voice: dict | None = None):
     if face not in FACES:
         return
+    state = {"лицо": face, "говорит": talking, "выход": False}
+    if voice:
+        state["голос"] = voice   # громкость по времени: волна повторяет голос
     tmp = STATE_FILE + ".tmp"
     try:
         with open(tmp, "w", encoding="utf-8") as f:
-            json.dump({"лицо": face, "говорит": talking, "выход": False}, f, ensure_ascii=False)
+            json.dump(state, f, ensure_ascii=False)
         os.replace(tmp, STATE_FILE)
     except OSError as e:
         print("Ошибка записи состояния:", e)
@@ -120,10 +123,30 @@ def get_face():
 
 
 # ---------- Голос из динамика робота ----------
+VOICE_LAG_MS = 150   # примерная задержка запуска ffplay; если волна опережает голос - увеличить
+
+def voice_levels(mp3, step_ms=20):
+    """Громкость голоса каждые step_ms (0..1) - по ней лицо рисует волну во время речи."""
+    try:
+        pcm = subprocess.run(["ffmpeg", "-v", "error", "-i", "pipe:0", "-f", "s16le", "-ac", "1", "-ar", "8000", "pipe:1"],
+                             input=mp3, capture_output=True, timeout=20).stdout
+    except Exception as e:
+        print("Ошибка разбора громкости:", e)
+        return []
+    a = array.array("h")
+    a.frombytes(pcm[:len(pcm) // 2 * 2])
+    n = 8 * step_ms
+    lv = [(sum(x * x for x in a[i:i + n]) / n) ** 0.5 for i in range(0, len(a), n)]
+    top = max(lv, default=0)
+    if top < 1:
+        return []
+    return [round(min(1.0, v / top) ** 0.7, 2) for v in lv]
+
+
 _speak_lock = threading.Lock()
 
 
-def say(text: str, face: str = "радость"):
+def say(text: str, face: str = "обычное"):
     """Озвучить фразу через динамик робота (в фоне, по очереди)."""
     text = re.sub(r"[*_#`]", "", text).strip()
     if not text:
@@ -139,7 +162,9 @@ def say(text: str, face: str = "радость"):
                 return data
             try:
                 audio = asyncio.run(mp3())
-                set_face(face if face in FACES else "радость", True)
+                levels = voice_levels(audio)
+                set_face("обычное", True,   # во время речи лицо всегда обычное, волна голоса под ним
+                         voice={"старт": int(time.time() * 1000) + VOICE_LAG_MS, "шаг": 20, "уровни": levels})
                 subprocess.run(["ffplay", "-nodisp", "-autoexit", "-loglevel", "error", "-i", "pipe:0", "-af", VOICE_FX],
                                input=audio, timeout=120)
             except Exception as e:
