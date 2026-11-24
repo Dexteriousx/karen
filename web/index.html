@@ -187,10 +187,11 @@ function addMsg(who,text,err){
   $('empty')?.remove();
   const d=document.createElement('div');
   d.className='msg '+(who==='me'?'me':'karen'+(err?' err':''));
-  d.textContent=text;
-  if(who!=='me'&&!err){const b=document.createElement('button');b.textContent='🔊';b.title='Повторить вслух';b.onclick=()=>speak(text);d.append(b);}
-  log.append(d); scrollChat();
+  d.textContent=text; d._text=text;
+  if(who!=='me'&&!err){const b=document.createElement('button');b.textContent='🔊';b.title='Повторить вслух';b.onclick=()=>speak(d._text);d.append(b);}
+  log.append(d); scrollChat(); return d;
 }
+function setMsgText(d,text){ d._text=text; d.firstChild.nodeValue=text; scrollChat(); }
 function addRobotLine(label,text){
   $('empty')?.remove();
   const d=document.createElement('div'); d.className='msg robot';
@@ -206,10 +207,32 @@ async function send(text){
   face.setFace('думает'); face.talking=false; status('Карен думает…');
   try{
     const viaRobot=robotVoice();
-    const j=await (await api('/api/chat',{message:text,history:history.slice(-20),robot_voice:viaRobot})).json();
-    if(!j.drove) history.push({role:'user',text},{role:'model',text:j.text});
-    addMsg('karen',j.text); face.setFace(j.face||'обычное'); status(viaRobot?'Говорит робот…':'');
-    if(!viaRobot) await speak(j.text);
+    // ответ приходит по предложениям: показываем и озвучиваем каждое сразу, не дожидаясь конца
+    const r=await api('/api/chat/stream',{message:text,history:history.slice(-20),robot_voice:viaRobot});
+    const reader=r.body.getReader(), dec=new TextDecoder();
+    let buf='', shown='', bubble=null, done=null;
+    const handle=j=>{
+      if(j.type==='face'){ face.setFace(j.face||'обычное'); }
+      else if(j.type==='sentence'){
+        shown=shown?shown+' '+j.text:j.text;
+        if(!bubble){ bubble=addMsg('karen',shown); status(viaRobot?'Говорит робот…':''); } else setMsgText(bubble,shown);
+        if(!viaRobot) queueSpeak(j.text);
+      }
+      else if(j.type==='done'){ done=j; }
+      else if(j.type==='error'){ throw new Error(j.text); }
+    };
+    for(;;){
+      const {value,done:end}=await reader.read();
+      if(value) buf+=dec.decode(value,{stream:true});
+      let i; while((i=buf.indexOf('\n'))>=0){ const ln=buf.slice(0,i).trim(); buf=buf.slice(i+1); if(ln) handle(JSON.parse(ln)); }
+      if(end) break;
+    }
+    if(!done) throw new Error('Ответ оборвался. Попробуй ещё раз.');
+    if(!done.drove) history.push({role:'user',text},{role:'model',text:done.text});
+    if(!bubble){ addMsg('karen',done.text); status(viaRobot?'Говорит робот…':''); if(!viaRobot) queueSpeak(done.text); }
+    else setMsgText(bubble,done.text);
+    if(done.drove) face.setFace('обычное');
+    await sayChain;
   }catch(e){
     if(e.message!=='auth') addMsg('karen',e.message==='Failed to fetch'?'Нет связи с сервером.':e.message,true);
     status('');
@@ -235,19 +258,27 @@ function unlockAudio(){
   const buf=new Uint8Array(an.fftSize);
   (function meter(){an.getByteTimeDomainData(buf);let s=0;for(const v of buf){const x=(v-128)/128;s+=x*x;}face.level=Math.min(1,Math.sqrt(s/buf.length)*4);requestAnimationFrame(meter);})();
 }
-function stopSpeaking(){ if(currentSrc){try{currentSrc.stop()}catch(e){} currentSrc=null;} phoneTalking=false; face.talking=false; }
-async function speak(text){
-  if(!soundOn) return;
-  unlockAudio(); stopSpeaking();
-  try{
-    const r=await api('/api/say',{text});
-    const audio=await ac.decodeAudioData(await r.arrayBuffer());
+// Очередь речи: звук каждого предложения скачивается сразу, играют строго по порядку.
+let sayChain=Promise.resolve(), sayGen=0;
+function stopSpeaking(){ sayGen++; sayChain=Promise.resolve(); if(currentSrc){try{currentSrc.stop()}catch(e){} currentSrc=null;} phoneTalking=false; face.talking=false; }
+function queueSpeak(text){
+  if(!soundOn) return sayChain;
+  unlockAudio();
+  const gen=sayGen;
+  const audioP=api('/api/say',{text}).then(r=>r.arrayBuffer()).then(b=>ac.decodeAudioData(b));   // качаем сразу
+  audioP.catch(()=>{});
+  sayChain=sayChain.then(async()=>{
+    if(gen!==sayGen) return;
+    let audio; try{ audio=await audioP; }catch(e){ if(e.message!=='auth') status('Не получилось озвучить'); return; }
+    if(gen!==sayGen) return;
     const src=ac.createBufferSource(); src.buffer=audio; src.connect(fxIn);
     currentSrc=src; phoneTalking=true; face.fakeTalk=false; face.talking=true;
     await new Promise(res=>{src.onended=res; src.start();});
-    if(currentSrc===src) stopSpeaking();
-  }catch(e){ stopSpeaking(); if(e.message!=='auth') status('Не получилось озвучить'); }
+    if(currentSrc===src){ currentSrc=null; face.talking=false; }
+  }).then(()=>{ if(gen===sayGen&&!currentSrc) phoneTalking=false; });
+  return sayChain;
 }
+function speak(text){ stopSpeaking(); return queueSpeak(text); }
 function paintMute(){$('mute').classList.toggle('off',!soundOn);$('waveIcon').style.display=soundOn?'':'none';}
 $('mute').onclick=()=>{soundOn=!soundOn;store.set('karen-sound',soundOn?'1':'0');if(!soundOn)stopSpeaking();paintMute();};
 paintMute();

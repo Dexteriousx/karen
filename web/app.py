@@ -10,7 +10,7 @@
   ROBOT_TOKEN      секрет, с которым робот подключается к сайту
   KAREN_ROBOT=1    режим «сайт запущен прямо на роботе» (без облака, колёса напрямую)
 """
-import os, re, time, asyncio, datetime, secrets, collections
+import os, re, json, time, asyncio, datetime, secrets, collections
 from zoneinfo import ZoneInfo
 
 import edge_tts
@@ -404,6 +404,102 @@ async def chat(body: ChatIn, request: Request):
         except HTTPException:
             pass
     return {"text": text, "face": face}
+
+
+SENTENCE_END = re.compile(r"(?<=[.!?…])\s+")
+
+
+@app.post("/api/chat/stream")
+async def chat_stream(body: ChatIn, request: Request):
+    """Как /api/chat, но ответ идёт по предложениям (NDJSON), как только Gemini их пишет:
+    телефон и робот начинают говорить, не дожидаясь конца ответа."""
+    check_auth(request)
+    add_event("chat_user", body.message)
+    cmd = drive_command(body.message) if robot.online else None
+
+    def line(**kw):
+        return json.dumps(kw, ensure_ascii=False) + "\n"
+
+    async def gen():
+        if cmd:
+            l, r, secs, answer = cmd
+            try:
+                if secs:
+                    await robot.send({"type": "drive", "left": l, "right": r, "seconds": secs})
+                else:
+                    await robot.send({"type": "stop"})
+            except HTTPException as e:
+                answer = e.detail
+            add_event("chat_karen", answer)
+            if body.robot_voice:
+                await robot.send({"type": "say", "text": answer, "face": "обычное"})
+            yield line(type="done", text=answer, face="обычное", drove=True)
+            return
+
+        now = datetime.datetime.now(TZ).strftime("%A, %d.%m.%Y, %H:%M")
+        contents = [types.Content(role=t.role, parts=[types.Part(text=t.text)]) for t in body.history[-20:]]
+        contents.append(types.Content(role="user", parts=[types.Part(text=f"[Сейчас: {now}] {body.message}")]))
+        face, head_done, buf, spoken = "обычное", False, "", []
+
+        async def emit(sentence):
+            sentence = re.sub(r"[*_#`]", "", sentence).strip()
+            if not sentence:
+                return None
+            spoken.append(sentence)
+            if body.robot_voice and robot.online:
+                try:
+                    await robot.send({"type": "say", "text": sentence, "face": face})
+                except HTTPException:
+                    pass
+            return line(type="sentence", text=sentence)
+
+        def take_face_tag():
+            nonlocal buf, face, head_done
+            m = re.match(r"^\s*\[([^\]]*)\]\s*", buf)
+            if m:
+                tag = m.group(1).strip().lower()
+                if tag in FACES:
+                    face = tag
+                buf = buf[m.end():]
+                head_done = True
+            elif not (buf.lstrip().startswith("[") and len(buf) < 40):
+                head_done = True
+
+        try:
+            stream = await client.aio.models.generate_content_stream(model=MODEL, contents=contents, config=config)
+            async for chunk in stream:
+                buf += chunk.text or ""
+                if not head_done:
+                    take_face_tag()
+                    if not head_done:
+                        continue
+                    yield line(type="face", face=face)
+                parts = SENTENCE_END.split(buf)
+                for s in parts[:-1]:
+                    out = await emit(s)
+                    if out:
+                        yield out
+                buf = parts[-1]
+            if not head_done:
+                take_face_tag()
+                yield line(type="face", face=face)
+            out = await emit(buf)
+            if out:
+                yield out
+        except Exception as e:
+            print("Ошибка Gemini:", e)
+            if not spoken:
+                yield line(type="error", text="Карен не смогла связаться с мозгом. Попробуй ещё раз.")
+                return
+        if not spoken:
+            out = await emit("Ой, мои микросхемы задумались. Повтори, пожалуйста.")
+            yield out
+        text = " ".join(spoken)
+        add_event("chat_karen", text)
+        yield line(type="done", text=text, face=face)
+
+    return StreamingResponse(gen(), media_type="application/x-ndjson",
+                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
 @app.post("/api/say")
