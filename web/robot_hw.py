@@ -99,9 +99,9 @@ def drive_command(text: str):
 
 # ---------- Лицо на экране робота (читает «Лицо Карен.html») ----------
 def set_face(face: str, talking: bool = False, voice: dict | None = None):
-    if face == "говорит":   # кнопка «говорит» на сайте: обычное лицо + волна, пока не выберут другое
-        face, talking = "обычное", True
-    if face not in FACES:
+    if face == "говорит":   # кнопка «говорит» на сайте: только волна на весь экран, пока не выберут другое
+        talking = True
+    elif face not in FACES:
         return
     state = {"лицо": face, "говорит": talking, "выход": False}
     if voice:

@@ -11,12 +11,13 @@ window.KarenFace = function (cv) {
     'сонная':    {open:.14, brow:0,   browY:0,   curve:.15, mopen:0,   mw:40,  cheek:0, sz:1,   lx:0,  ly:.4,  col:'#8fa6c8', wink:0},
     'слушает':   {open:1.1, brow:-.3, browY:-10, curve:.2,  mopen:0,   mw:50,  cheek:0, sz:1.05,lx:0,  ly:0,   col:'#9dff7a', wink:0},
     'подмигивает':{open:1,  brow:-.1, browY:-4,  curve:.9,  mopen:.15, mw:95,  cheek:.3, sz:1,   lx:0,  ly:0,   col:'#ff9de6', wink:1},
+    'говорит':   {open:1,   brow:0,   browY:0,   curve:.35, mopen:0,   mw:70,  cheek:0, sz:1,   lx:0,  ly:0,   col:'#5ef2ff', wink:0},   // только волна, без лица
   };
   const NUM = ['open','brow','browY','curve','mopen','mw','cheek','sz','lx','ly','wink'];
   const hex = h => [1,3,5].map(i => parseInt(h.substr(i,2),16)), lerp = (a,b,k) => a+(b-a)*k;
   const cur = JSON.parse(JSON.stringify(FACES['обычное']));
   let target = FACES['обычное'], colCur = hex('#5ef2ff');
-  let blink = 0, nextBlink = 2, lookTX = 0, lookTY = 0, nextLook = 1.5, mouthOpenNow = 0, talkMix = 0, last = performance.now();
+  let blink = 0, nextBlink = 2, lookTX = 0, lookTY = 0, nextLook = 1.5, mouthOpenNow = 0, talkMix = 0, waveMix = 0, last = performance.now();
   const api = { name: 'обычное', talking: false, level: 0, fakeTalk: false,
     setFace(n){ if (FACES[n]) { api.name = n; target = FACES[n]; } }, faces: Object.keys(FACES) };
 
@@ -73,8 +74,10 @@ window.KarenFace = function (cv) {
     mouthOpenNow=lerp(mouthOpenNow,mo,1-Math.pow(.00001,dt));
     g.fillStyle='#050608';g.fillRect(0,0,W,H);
     talkMix=lerp(talkMix,api.talking?1:0,1-Math.pow(.002,dt));
-    if(talkMix>.01) waves(col,3+Math.min(1,mouthOpenNow)*50,t,talkMix,425);
-    g.save();
+    waveMix=lerp(waveMix,api.name==='говорит'?1:0,1-Math.pow(.002,dt));   // «говорит»: только волна, без лица
+    const m=Math.min(1,mouthOpenNow), wa=Math.max(talkMix,waveMix);
+    if(wa>.01) waves(col,lerp(3+m*50,40+m*150,waveMix),t,wa,lerp(425,H/2,waveMix));
+    g.save();g.globalAlpha=Math.max(0,1-waveMix*1.1);
     const sz=cur.sz, ew=130*sz, eh=150*sz*cur.open*bl, ex=[255+lx*22,545+lx*22], ey=185+ly*18;
     eye(ex[0],ey,ew,eh,col,cur.cheek);
     eye(ex[1],ey,ew,eh*(1-cur.wink*.93),col,cur.cheek*(1-cur.wink));

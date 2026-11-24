@@ -150,7 +150,7 @@
 </main>
 <div id="lock"><form id="lockForm"><h1>Карен</h1><input id="pw" type="password" placeholder="Пароль" autocomplete="current-password"><button>Войти</button><p id="lockErr"></p></form></div>
 
-<script src="/face.js?v=3"></script>
+<script src="/face.js?v=4"></script>
 <script>
 const $=id=>document.getElementById(id);
 const face=KarenFace($('c'));
@@ -275,8 +275,8 @@ const markFace=n=>document.querySelectorAll('#faces .chip').forEach(b=>b.classLi
 const FACE_BTNS=[['обычное','🙂'],['говорит','🗣️'],['грусть','😢'],['злость','😠'],['удивление','😮'],['думает','🤔'],['сонная','😴'],['слушает','👂'],['подмигивает','😉']];
 for(const [name,icon] of FACE_BTNS){
   const b=document.createElement('button');b.type='button';b.className='chip';b.dataset.face=name;b.textContent=icon+' '+name;
-  b.onclick=()=>{const speak=name==='говорит';   // «говорит»: обычное лицо + волна голоса
-    face.setFace(speak?'обычное':name);face.fakeTalk=speak;face.talking=speak;
+  b.onclick=()=>{const speak=name==='говорит';   // «говорит»: только волна, без лица
+    face.setFace(name);face.fakeTalk=speak;face.talking=speak;
     faceTouched=Date.now();markFace(name);   // сразу зелёная, не ждём ответа робота
     api('/api/face',{face:name}).catch(e=>padError(e.message));};
   $('faces').append(b);
