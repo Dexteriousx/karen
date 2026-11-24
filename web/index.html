@@ -258,7 +258,7 @@ $('mic').onclick=()=>{
   unlockAudio();
   if(listening){rec.stop();return;}
   stopSpeaking();
-  rec=new SR(); rec.lang='ru-RU'; rec.interimResults=true;
+  rec=new SR(); rec.lang='kk-KZ'; rec.interimResults=true;
   let finalText='';
   rec.onstart=()=>{listening=true;$('mic').classList.add('on');face.setFace('слушает');status('Слушаю…');};
   rec.onresult=e=>{let interim='';finalText='';for(const r of e.results){if(r.isFinal)finalText+=r[0].transcript;else interim+=r[0].transcript;}input.value=finalText+interim;};

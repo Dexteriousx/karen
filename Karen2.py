@@ -7,6 +7,10 @@ from google.genai import types
 # ---------- Настройки ----------
 MODEL = "gemini-3.5-flash-lite"   # быстрее, чем gemini-3.8-flash (~0.7 с против ~2 с); вернуть старую — поменяй здесь
 VOICE = "ru-RU-SvetlanaNeural"
+VOICE_KK = "kk-KZ-AigulNeural"   # казахский голос (мужской: kk-KZ-DauletNeural)
+# Язык, на котором Карен слушает: "ru" или "kk". Переключается голосом: «қазақша» / «орысша».
+LANG = os.environ.get("KAREN_LANG", "kk")   # по умолчанию казахский
+KK_LETTERS = re.compile(r"[әғқңөұүһіӘҒҚҢӨҰҮҺІ]")   # буквы, которых нет в русском
 PITCH = "+65Hz"     # подогнано под голос Карен из cbkitchen01dbb.wav (~260 Гц); было "+10Hz"
 # «Компьютерный» фильтр голоса Карен (ffmpeg). Выключить: VOICE_FX = ""
 VOICE_FX = ("highpass=f=170,lowpass=f=5200,aecho=0.85:0.6:11:0.22,"
@@ -33,7 +37,8 @@ system_instruction = (
     f"ищи в интернете. Ты находишься в городе {CITY}: если город не назван, имей в виду его. "
     "Текущие дата и время приходят в начале каждого сообщения в квадратных скобках. "
     "Сначала дай полезный ответ, потом, если уместно, короткая добрая шутка. "
-    "Отвечай по-русски, 1-3 коротких предложения. "
+    "Ты говоришь по-русски и по-казахски. Отвечай на том языке, который указан в начале сообщения "
+    "(«Язык ответа»), 1-3 коротких предложения. По-казахски пиши грамотно, казахскими буквами (ә, ғ, қ, ң, ө, ұ, ү, һ, і). "
     "Твой ответ озвучивается голосом, поэтому: без смайликов, списков, звёздочек, заголовков, ссылок и "
     "названий сайтов; числа пиши так, чтобы их легко было прочитать вслух (например «плюс пять градусов», "
     "а не «+5 °C»; без диапазонов через многоточие)."
@@ -82,7 +87,8 @@ def synth_worker():
         chunks = queue.Queue()
         audio_q.put(chunks)            # проигрыватель может начинать, не дожидаясь конца
         async def go():
-            async for ch in edge_tts.Communicate(text, VOICE, rate=RATE, pitch=PITCH).stream():
+            voice = VOICE_KK if (LANG == "kk" or KK_LETTERS.search(text)) else VOICE
+            async for ch in edge_tts.Communicate(text, voice, rate=RATE, pitch=PITCH).stream():
                 if ch["type"] == "audio":
                     chunks.put(ch["data"])
         try:
@@ -157,7 +163,8 @@ def ask_and_speak(user_text):
     set_state("думает")
     try:
         now = datetime.datetime.now().strftime("%A, %d.%m.%Y, %H:%M")
-        for chunk in chat.send_message_stream(f"[Сейчас: {now}] {user_text}"):
+        lang = "казахский" if LANG == "kk" else "русский"
+        for chunk in chat.send_message_stream(f"[Сейчас: {now}] [Язык ответа: {lang}] {user_text}"):
             full += chunk.text or ""
             buffer += chunk.text or ""
             parts = re.split(r"(?<=[.!?])\s+", buffer)
@@ -181,17 +188,32 @@ recognizer.non_speaking_duration = 0.4   # не больше pause_threshold
 recognizer.dynamic_energy_threshold = False
 recognizer.energy_threshold = 60   # тишина ~16-45, речь ~85-200 (до усиления)
 
-print("--- Карен запущена. Говори. Чтобы выключить, скажи «выключись». ---")
-say("Карен на связи.")
+print(f"--- Карен запущена (язык: {LANG}). Говори. Чтобы выключить, скажи «выключись». ---")
+say("Карен байланыста." if LANG == "kk" else "Карен на связи.")
 wait_until_spoken()
 
-STOP_PHRASES = {"стоп", "выход", "пока", "до свидания"}
+STOP_PHRASES = {"стоп", "выход", "пока", "до свидания", "тоқта", "сау бол", "сау болыңыз"}
 # команды «выключись» (ищутся внутри фразы, например «Карен, выключись»)
-SLEEP_WORDS = ("выключ", "отключ", "спать", "спокойной ночи", "засыпай", "усни", "уснуть")
+SLEEP_WORDS = ("выключ", "отключ", "спать", "спокойной ночи", "засыпай", "усни", "уснуть",
+               "өшір", "ұйықта", "қайырлы түн")
+
+# Смена языка: короткая фраза вроде «говори по-казахски», «қазақша сөйле», «орысша», «по-русски».
+# Длинные фразы («как по-казахски будет яблоко?») - это вопрос, их отдаём Gemini.
+TO_KK = ("қазақша", "казакша", "казахск", "по-казахски", "по казахски")
+TO_RU = ("орысша", "по-русски", "по русски", "русск")
+
+def language_command(low):
+    if len(low.split()) > 3:
+        return None
+    if any(w in low for w in TO_KK):
+        return "kk"
+    if any(w in low for w in TO_RU):
+        return "ru"
+    return None
 
 def go_to_sleep():
     """Прощается, лицо засыпает (Zzz), гаснет и закрывается, программа выходит."""
-    say("Спокойной ночи! Ухожу в спящий режим, сладких снов.")
+    say("Қайырлы түн! Ұйқы режиміне кеттім." if LANG == "kk" else "Спокойной ночи! Ухожу в спящий режим, сладких снов.")
     wait_until_spoken()
     shutting_down.set()
     set_state("спит", exit=True)   # страница: 3 с спит, затем гаснет и закрывается
@@ -217,10 +239,17 @@ while True:
               f"средний {audioop.rms(raw, audio.sample_width)})")
         with open(os.path.join(tempfile.gettempdir(), "karen_last.wav"), "wb") as f:
             f.write(audio.get_wav_data())
-        user_text = recognizer.recognize_google(audio, language="ru-RU")
+        user_text = recognizer.recognize_google(audio, language="kk-KZ" if LANG == "kk" else "ru-RU")
         print(f"Вы: {user_text}")
 
         low = user_text.lower().strip(" .!?,")
+        new_lang = language_command(low)
+        if new_lang:
+            LANG = new_lang
+            print(f"(язык: {LANG})")
+            say("Жақсы, енді қазақша сөйлесейік." if LANG == "kk" else "Хорошо, теперь говорим по-русски.")
+            wait_until_spoken()
+            continue
         if low in STOP_PHRASES or any(w in low for w in SLEEP_WORDS):
             go_to_sleep()
             break

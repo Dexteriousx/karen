@@ -7,6 +7,8 @@ import os, re, json, time, array, glob, asyncio, threading, subprocess
 import edge_tts
 
 VOICE = "ru-RU-SvetlanaNeural"
+VOICE_KK = "kk-KZ-AigulNeural"   # казахский голос
+KK_LETTERS = re.compile(r"[әғқңөұүһіӘҒҚҢӨҰҮҺІ]")
 PITCH = "+65Hz"
 RATE = "+5%"
 VOICE_FX = ("highpass=f=170,lowpass=f=5200,aecho=0.85:0.6:11:0.22,"
@@ -78,6 +80,11 @@ if left:
     threading.Thread(target=_watchdog, daemon=True).start()
 
 DRIVE_WORDS = [  # (слова, левое, правое, секунд, ответ)
+    (("тоқта", "токта"), 0, 0, 0, "Тоқтадым."),
+    (("артқа",), -1, -1, 2.0, "Артқа жүремін."),
+    (("солға",), -1, 1, 0.6, "Солға бұрыламын."),
+    (("оңға",), 1, -1, 0.6, "Оңға бұрыламын."),
+    (("алға",), 1, 1, 2.0, "Алға жүремін."),
     (("стоп", "стой", "остановись"), 0, 0, 0, "Стою."),
     (("назад",), -1, -1, 2.0, "Еду назад, Планктон."),
     (("налево", "влево"), -1, 1, 0.6, "Поворачиваю налево."),
@@ -158,7 +165,8 @@ def say(text: str, face: str = "обычное"):
         with _speak_lock:
             async def mp3():
                 data = b""
-                async for ch in edge_tts.Communicate(text, VOICE, rate=RATE, pitch=PITCH).stream():
+                voice = VOICE_KK if KK_LETTERS.search(text) else VOICE
+                async for ch in edge_tts.Communicate(text, voice, rate=RATE, pitch=PITCH).stream():
                     if ch["type"] == "audio":
                         data += ch["data"]
                 return data
