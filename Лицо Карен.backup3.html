@@ -29,7 +29,7 @@
 /* ===== Лицо Карен: экран 800x480 (Waveshare 7") =====
    Клавиши: 1 обычное  2 грусть  3 злость  4 удивление  5 думает  6 сонная  7 слушает  8 подмигивает  9 говорит (только волна)
             Т - говорит вкл/выкл   А - автодемо   H - показать подсказку   F - полный экран
-   Из программы: файл состояния.json рядом {"лицо":"грусть","говорит":true}  (во время речи лицо всегда обычное, волна голоса под ним) (нужен python3 -m http.server)
+   Из программы: файл состояния.json рядом {"лицо":"грусть","говорит":true}  (во время речи лицо сменяется большой волной голоса) (нужен python3 -m http.server)
    Или адрес страницы с #грусть / #talk
 */
 const cv=document.getElementById('c'), g=cv.getContext('2d');
@@ -213,7 +213,7 @@ function frame(now){
 
   // волна голоса под лицом (плавно появляется и исчезает)
   talkMix=lerp(talkMix,talking?1:0,1-Math.pow(.002,dt));
-  waveMix=lerp(waveMix,faceName==='говорит'?1:0,1-Math.pow(.002,dt));
+  waveMix=lerp(waveMix,(faceName==='говорит'||talking)?1:0,1-Math.pow(.002,dt));   // во время речи — только волна вместо лица
   const small=realVoice?3+mouthOpenNow*50:8+mouthOpenNow*35, big=realVoice?6+mouthOpenNow*190:40+mouthOpenNow*150;
   const wa=Math.max(talkMix,waveMix);   // речь: волна под лицом; «говорит»: только большая волна посередине
   if(wa>.01) drawWaves(col,lerp(small,big,waveMix),t,wa,lerp(425,H/2,waveMix));

@@ -32,7 +32,7 @@ window.KarenFace = function (cv) {
     g.save();g.strokeStyle=col;g.lineWidth=12;g.lineCap='round';g.shadowColor=col;g.shadowBlur=18;
     g.beginPath();g.moveTo(cx+inner*(w/2),cy+dy);g.lineTo(cx-inner*(w/2),cy-dy);g.stroke();g.restore();
   }
-  function waves(col,amp,t,alpha,cy){   // одна линия голоса под лицом
+  function waves(col,amp,t,alpha,cy){   // одна линия голоса: во время речи — большая посередине
     const N=200, ws=[[1.6,2.2,0,1,8,1]];
     g.save();g.strokeStyle=col;g.lineCap='round';g.lineJoin='round';g.shadowColor=col;g.shadowBlur=24;
     for(const [f,s,ph,a,lw,op] of ws){
@@ -74,7 +74,7 @@ window.KarenFace = function (cv) {
     mouthOpenNow=lerp(mouthOpenNow,mo,1-Math.pow(.00001,dt));
     g.fillStyle='#050608';g.fillRect(0,0,W,H);
     talkMix=lerp(talkMix,api.talking?1:0,1-Math.pow(.002,dt));
-    waveMix=lerp(waveMix,api.name==='говорит'?1:0,1-Math.pow(.002,dt));   // «говорит»: только волна, без лица
+    waveMix=lerp(waveMix,(api.name==='говорит'||api.talking)?1:0,1-Math.pow(.002,dt));   // «говорит» и во время речи: только большая волна вместо лица (как на экране робота)
     const m=Math.min(1,mouthOpenNow), wa=Math.max(talkMix,waveMix);
     if(wa>.01) waves(col,lerp(3+m*50,40+m*150,waveMix),t,wa,lerp(425,H/2,waveMix));
     g.save();g.globalAlpha=Math.max(0,1-waveMix*1.1);
