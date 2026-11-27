@@ -59,6 +59,8 @@
   #mic.on{background:var(--err);color:#fff;animation:pulse 1s infinite}
   @keyframes pulse{50%{box-shadow:0 0 0 8px rgba(255,90,77,.25)}}
   #mute.off{color:var(--err)}
+  #hush{display:none;background:var(--err);color:#fff;border-color:var(--err)}
+  body.speaking #hush{display:grid}
   /* пульт */
   #tab-drive .scroll{display:flex;flex-direction:column;align-items:center;gap:16px;user-select:none;-webkit-user-select:none}
   .note{width:100%;max-width:420px;text-align:center;font-size:14px;border-radius:12px;padding:10px;margin:0}
@@ -119,6 +121,9 @@
         <button type="button" class="btn" id="mute" title="Звук на телефоне вкл/выкл" aria-label="Звук">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4V5z"/><path id="waveIcon" d="M15.5 8.5a5 5 0 0 1 0 7M19 5a10 10 0 0 1 0 14"/></svg>
         </button>
+        <button type="button" class="btn" id="hush" title="Остановить речь" aria-label="Остановить речь">
+          <svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
+        </button>
         <input id="text" class="field" placeholder="Сообщение Карен…" enterkeyhint="send">
         <button type="button" class="btn" id="lang" title="Язык микрофона / Тіл / Language" aria-label="Язык микрофона">ҚАЗ</button>
         <button type="button" class="btn" id="mic" title="Говорить" aria-label="Говорить">
@@ -175,8 +180,8 @@ document.querySelectorAll('#tabs button').forEach(b=>b.onclick=()=>showTab(b.dat
 
 
 /* ---------- запросы ---------- */
-async function api(path,body){
-  const r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json','X-Karen-Password':password},body:JSON.stringify(body||{})});
+async function api(path,body,signal){
+  const r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json','X-Karen-Password':password},body:JSON.stringify(body||{}),signal});
   if(r.status===401){showLock('Неверный пароль');throw new Error('auth');}
   if(!r.ok){const j=await r.json().catch(()=>({}));throw new Error(j.detail||'Ошибка '+r.status);}
   return r;
@@ -206,9 +211,10 @@ async function send(text){
   addMsg('me',text); input.value='';
   face.setFace('думает'); face.talking=false; status('Карен думает…');
   try{
-    const viaRobot=robotVoice();
+    const viaRobot=robotVoice(); robotSpeaking=viaRobot;
+    streamCtl=new AbortController();
     // ответ приходит по предложениям: показываем и озвучиваем каждое сразу, не дожидаясь конца
-    const r=await api('/api/chat/stream',{message:text,history:history.slice(-20),robot_voice:viaRobot});
+    const r=await api('/api/chat/stream',{message:text,history:history.slice(-20),robot_voice:viaRobot},streamCtl.signal);
     const reader=r.body.getReader(), dec=new TextDecoder();
     let buf='', shown='', bubble=null, done=null;
     const handle=j=>{
@@ -234,10 +240,10 @@ async function send(text){
     if(done.drove) face.setFace('обычное');
     await sayChain;
   }catch(e){
-    if(e.message!=='auth') addMsg('karen',e.message==='Failed to fetch'?'Нет связи с сервером.':e.message,true);
+    if(e.name!=='AbortError'&&e.message!=='auth') addMsg('karen',e.message==='Failed to fetch'?'Нет связи с сервером.':e.message,true);
     status('');
   }finally{
-    busy=false; setTimeout(()=>{if(!busy&&!phoneTalking&&!listening){face.setFace('обычное');status('');}},2500);
+    busy=false; streamCtl=null; robotSpeaking=false; setTimeout(()=>{if(!busy&&!phoneTalking&&!listening){face.setFace('обычное');status('');}},2500);
   }
 }
 $('bar').addEventListener('submit',e=>{e.preventDefault();send(input.value);});
@@ -279,6 +285,15 @@ function queueSpeak(text){
   return sayChain;
 }
 function speak(text){ stopSpeaking(); return queueSpeak(text); }
+// Кнопка «стоп»: Карен сразу замолкает — и на телефоне, и через динамик робота
+let streamCtl=null, robotSpeaking=false;
+$('hush').onclick=()=>{
+  if(streamCtl) streamCtl.abort();   // не ждём остаток ответа
+  stopSpeaking(); robotSpeaking=false;
+  if(online) api('/api/hush').catch(()=>{});
+  face.fakeTalk=false; face.talking=false; face.setFace('обычное'); status('');
+};
+setInterval(()=>document.body.classList.toggle('speaking',phoneTalking||robotSpeaking||(online&&!!tel.talking)),200);
 function paintMute(){$('mute').classList.toggle('off',!soundOn);$('waveIcon').style.display=soundOn?'':'none';}
 $('mute').onclick=()=>{soundOn=!soundOn;store.set('karen-sound',soundOn?'1':'0');if(!soundOn)stopSpeaking();paintMute();};
 paintMute();

@@ -164,6 +164,8 @@ class LocalRobot:
                 hw.set_face(msg["face"])
             elif t == "say":
                 hw.say(msg["text"], msg.get("face", "обычное"))
+            elif t == "hush":
+                hw.hush()
             elif t == "karen":
                 hw.karen_start() if msg["on"] else hw.karen_stop()
         except RuntimeError as e:
@@ -325,6 +327,20 @@ async def robot_say(body: SayIn, request: Request):
     return {"ok": True}
 
 
+HUSH_AT = 0.0   # когда нажали «стоп речи»: ответы, начатые раньше, роботу больше не отправляем
+
+
+@app.post("/api/hush")
+async def hush(request: Request):
+    """Кнопка «стоп» в чате: робот сразу замолкает."""
+    global HUSH_AT
+    check_auth(request)
+    HUSH_AT = time.time()
+    await robot.send({"type": "hush"})
+    add_event("cmd", "Замолчать")
+    return {"ok": True}
+
+
 @app.post("/api/karen")
 async def karen_power(body: KarenIn, request: Request):
     check_auth(request)
@@ -457,6 +473,7 @@ async def chat_stream(body: ChatIn, request: Request):
     check_auth(request)
     add_event("chat_user", body.message)
     cmd = drive_command(body.message) if robot.online else None
+    started = time.time()
 
     def line(**kw):
         return json.dumps(kw, ensure_ascii=False) + "\n"
@@ -488,7 +505,7 @@ async def chat_stream(body: ChatIn, request: Request):
             if not sentence:
                 return None
             spoken.append(sentence)
-            if body.robot_voice and robot.online:
+            if body.robot_voice and robot.online and HUSH_AT < started:
                 try:
                     await robot.send({"type": "say", "text": sentence, "face": face})
                 except HTTPException:

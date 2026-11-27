@@ -1,7 +1,7 @@
 """Агент робота Карен: держит связь Raspberry Pi <-> сайт (Render).
 
 Робот сам подключается к сайту (WebSocket), поэтому работает за любым Wi-Fi/хотспотом.
-Получает команды: ехать, стоп, лицо, сказать, включить/выключить голосовую Карен.
+Получает команды: ехать, стоп, лицо, сказать, замолчать, включить/выключить голосовую Карен.
 Отправляет: датчики (температура, CPU, Wi-Fi…) каждые 2 с и реплики голосовой Карен.
 
 Запуск: ROBOT_TOKEN=... KAREN_CLOUD=wss://<сайт>/ws/robot python robot_agent.py
@@ -31,6 +31,8 @@ async def handle(ws, msg):
             hw.set_face(str(msg.get("face", "обычное")))
         elif t == "say":
             hw.say(str(msg.get("text", ""))[:2000], str(msg.get("face", "обычное")))
+        elif t == "hush":
+            hw.hush()
         elif t == "karen":
             if msg.get("on"):
                 hw.karen_start()

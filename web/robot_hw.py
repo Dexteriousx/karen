@@ -187,16 +187,28 @@ def _synth(text):
         return b""
 
 
+_say_gen = 0      # растёт при «замолчи»: фразы, поставленные раньше, не играются
+_player = None    # ffplay, который сейчас говорит
+
+
 def _play_worker():
+    global _player
     while True:
-        audio = _play_q.get().result()
-        if audio:
+        gen, fut = _play_q.get()
+        audio = fut.result()
+        if audio and gen == _say_gen:
             try:
                 levels = voice_levels(audio)
                 set_face("обычное", True,   # во время речи лицо всегда обычное, волна голоса под ним
                          voice={"старт": int(time.time() * 1000) + VOICE_LAG_MS, "шаг": 20, "уровни": levels})
-                subprocess.run(["ffplay", "-nodisp", "-autoexit", "-loglevel", "error", "-i", "pipe:0", "-af", VOICE_FX],
-                               input=audio, timeout=120)
+                _player = subprocess.Popen(["ffplay", "-nodisp", "-autoexit", "-loglevel", "error", "-i", "pipe:0", "-af", VOICE_FX],
+                                           stdin=subprocess.PIPE)
+                try:
+                    _player.communicate(audio, timeout=120)
+                except subprocess.TimeoutExpired:
+                    _player.kill()
+                finally:
+                    _player = None
             except Exception as e:
                 print("Ошибка озвучки:", e)
         if _play_q.empty():
@@ -210,7 +222,22 @@ def say(text: str, face: str = "обычное"):
     """Озвучить фразу через динамик робота (в фоне, по очереди)."""
     text = re.sub(r"[*_#`]", "", text).strip()
     if text:
-        _play_q.put(_synth_pool.submit(_synth, text))   # качаем сразу, играем по очереди
+        _play_q.put((_say_gen, _synth_pool.submit(_synth, text)))   # качаем сразу, играем по очереди
+
+
+def hush():
+    """Кнопка «стоп» на сайте: замолчать сразу и выбросить очередь фраз."""
+    global _say_gen
+    _say_gen += 1
+    while True:
+        try:
+            _play_q.get_nowait()
+        except queue.Empty:
+            break
+    p = _player
+    if p and p.poll() is None:
+        p.kill()
+    set_face("обычное")
 
 
 # ---------- Голосовая Карен (Karen2.py: микрофон + лицо на весь экран) ----------
