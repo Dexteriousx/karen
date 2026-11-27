@@ -40,8 +40,8 @@ try:
     if not os.path.exists("/dev/gpiochip0"):
         raise RuntimeError("это не Raspberry Pi")
     from gpiozero import Motor
-    left = Motor(forward=5, backward=6, pwm=True)                 # IN1=GPIO5, IN2=GPIO6
-    right = Motor(forward=22, backward=23, enable=13, pwm=True)   # IN3=GPIO22, IN4=GPIO23, ENB=GPIO13
+    left = Motor(forward=6, backward=5, pwm=True)                 # IN2=GPIO6 вперёд, IN1=GPIO5 назад (проверено 27.11.2026, не менять)
+    right = Motor(forward=22, backward=23, enable=13, pwm=True)   # IN3=GPIO22 вперёд, IN4=GPIO23 назад, ENB=GPIO13 (проверено, не менять)
 except Exception as e:   # например, колёса уже заняты kr.py
     motor_error = f"Колёса недоступны: {e}"
     print(motor_error)

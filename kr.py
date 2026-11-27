@@ -86,7 +86,7 @@ SPEED = 0.7          # скорость от 0 до 1
 DRIVE_SECONDS = 2    # сколько секунд едет после команды
 
 # Левый мотор: IN1 = GPIO5 (пин 29), IN2 = GPIO6 (пин 31); ENA соединён с +5V драйвера проводом
-left = Motor(forward=5, backward=6, pwm=True)
+left = Motor(forward=6, backward=5, pwm=True)
 # Правый мотор: IN3 = GPIO22 (пин 15), IN4 = GPIO23 (пин 16), ENB = GPIO13 (пин 33)
 right = Motor(forward=22, backward=23, enable=13, pwm=True)
 
