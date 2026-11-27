@@ -127,7 +127,7 @@ function drawHeartMouth(cx,cy,w,curve,amp,col,t){
 }
 
 // «говорит»: обычное лицо, под ним волна голоса
-let talkMix=0, waveMix=0;   // waveMix: лицо «говорит» (только волна)
+let talkMix=0, waveMix=0, lastTalk=-1e9;   // waveMix: лицо «говорит» (только волна)
 function drawWaves(col,amp,t,alpha,cy){
   const N=200;
   const waves=[ // частота, скорость, фаза, доля амплитуды, толщина, прозрачность
@@ -213,11 +213,13 @@ function frame(now){
 
   // волна голоса под лицом (плавно появляется и исчезает)
   talkMix=lerp(talkMix,talking?1:0,1-Math.pow(.002,dt));
-  waveMix=lerp(waveMix,(faceName==='говорит'||talking)?1:0,1-Math.pow(.002,dt));   // во время речи — только волна вместо лица
+  if(talking) lastTalk=now;
+  const speaking=talking||now-lastTalk<1500;   // паузы между фразами не возвращают лицо
+  waveMix=lerp(waveMix,(faceName==='говорит'||speaking)?1:0,1-Math.pow(speaking?.00001:.002,dt));   // во время речи — только большая волна, лица нет. Проверено 27.11.2026 — не менять
   const small=realVoice?3+mouthOpenNow*50:8+mouthOpenNow*35, big=realVoice?6+mouthOpenNow*190:40+mouthOpenNow*150;
   const wa=Math.max(talkMix,waveMix);   // речь: волна под лицом; «говорит»: только большая волна посередине
   if(wa>.01) drawWaves(col,lerp(small,big,waveMix),t,wa,lerp(425,H/2,waveMix));
-  g.save(); g.globalAlpha=Math.max(0,1-waveMix*1.1);   // при «говорит» лицо исчезает
+  g.save(); g.globalAlpha=speaking?0:Math.max(0,1-waveMix*1.1);   // во время речи лицо не рисуется совсем; при «говорит» исчезает
 
   const sz=cur.sz;
   const ew=130*sz, eh=150*sz*cur.open*bl;
