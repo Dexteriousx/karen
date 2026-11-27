@@ -332,7 +332,7 @@ HUSH_AT = 0.0   # когда нажали «стоп речи»: ответы, �
 
 @app.post("/api/hush")
 async def hush(request: Request):
-    """Кнопка «стоп» в чате: робот сразу замолкает."""
+    """Кнопка «стоп» в чате: робот сразу замолкает. Проверено 27.11.2026 — не менять."""
     global HUSH_AT
     check_auth(request)
     HUSH_AT = time.time()

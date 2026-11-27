@@ -285,7 +285,7 @@ function queueSpeak(text){
   return sayChain;
 }
 function speak(text){ stopSpeaking(); return queueSpeak(text); }
-// Кнопка «стоп»: Карен сразу замолкает — и на телефоне, и через динамик робота
+// Кнопка «стоп»: Карен сразу замолкает — и на телефоне, и через динамик робота. Проверено 27.11.2026 — не менять
 let streamCtl=null, robotSpeaking=false;
 $('hush').onclick=()=>{
   if(streamCtl) streamCtl.abort();   // не ждём остаток ответа
