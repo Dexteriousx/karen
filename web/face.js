@@ -17,7 +17,7 @@ window.KarenFace = function (cv) {
   const hex = h => [1,3,5].map(i => parseInt(h.substr(i,2),16)), lerp = (a,b,k) => a+(b-a)*k;
   const cur = JSON.parse(JSON.stringify(FACES['обычное']));
   let target = FACES['обычное'], colCur = hex('#5ef2ff');
-  let blink = 0, nextBlink = 2, lookTX = 0, lookTY = 0, nextLook = 1.5, mouthOpenNow = 0, talkMix = 0, waveMix = 0, last = performance.now();
+  let blink = 0, nextBlink = 2, lookTX = 0, lookTY = 0, nextLook = 1.5, mouthOpenNow = 0, talkMix = 0, waveMix = 0, lastTalk = -1e9, last = performance.now();
   const api = { name: 'обычное', talking: false, level: 0, fakeTalk: false,
     setFace(n){ if (FACES[n]) { api.name = n; target = FACES[n]; } }, faces: Object.keys(FACES) };
 
@@ -74,10 +74,12 @@ window.KarenFace = function (cv) {
     mouthOpenNow=lerp(mouthOpenNow,mo,1-Math.pow(.00001,dt));
     g.fillStyle='#050608';g.fillRect(0,0,W,H);
     talkMix=lerp(talkMix,api.talking?1:0,1-Math.pow(.002,dt));
-    waveMix=lerp(waveMix,(api.name==='говорит'||api.talking)?1:0,1-Math.pow(.002,dt));   // «говорит» и во время речи: только большая волна вместо лица (как на экране робота). Проверено 27.11.2026 — не менять
+    if(api.talking) lastTalk=now;
+    const speaking=api.talking||now-lastTalk<1500;   // паузы между фразами не возвращают лицо
+    waveMix=lerp(waveMix,(api.name==='говорит'||speaking)?1:0,1-Math.pow(speaking?.00001:.002,dt));   // «говорит» и во время речи: только большая волна, лица нет (как на экране робота). Проверено 27.11.2026 — не менять
     const m=Math.min(1,mouthOpenNow), wa=Math.max(talkMix,waveMix);
     if(wa>.01) waves(col,lerp(3+m*50,40+m*150,waveMix),t,wa,lerp(425,H/2,waveMix));
-    g.save();g.globalAlpha=Math.max(0,1-waveMix*1.1);
+    g.save();g.globalAlpha=speaking?0:Math.max(0,1-waveMix*1.1);   // во время речи лицо не рисуется совсем
     const sz=cur.sz, ew=130*sz, eh=150*sz*cur.open*bl, ex=[255+lx*22,545+lx*22], ey=185+ly*18;
     eye(ex[0],ey,ew,eh,col,cur.cheek);
     eye(ex[1],ey,ew,eh*(1-cur.wink*.93),col,cur.cheek*(1-cur.wink));
